@@ -1,3 +1,4 @@
+import { API_URL } from "./api-url";
 import type { Product } from "./data";
 
 type ApiProduct = {
@@ -19,7 +20,7 @@ export function mapCatalogProduct(row: ApiProduct): Product {
 }
 
 export async function loadCatalogProducts(signal?: AbortSignal): Promise<Product[]> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+  const apiUrl = API_URL;
   if (!apiUrl && typeof window === "undefined") return [];
   const response = await fetch(`${apiUrl}/api/products`, { headers: { Accept: "application/json" }, signal });
   if (!response.ok) throw new Error(`Catalog API returned HTTP ${response.status}`);

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { API_URL } from "./api-url";
 import { formatPrice, type Product } from "./data";
 import { useCart } from "./store-provider";
 
@@ -40,7 +41,6 @@ type SkinReport = {
 
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 
 const metricOrder: MetricKey[] = ["uniformity", "texture", "shine", "redness", "blemishes", "pores", "underEyes", "hydration"];
 const clamp = (value: number, min = 38, max = 98) => Math.round(Math.min(max, Math.max(min, value)));

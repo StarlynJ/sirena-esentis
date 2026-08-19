@@ -3,6 +3,7 @@
 import { Check, ChevronDown, LocateFixed, LoaderCircle, MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { API_URL as apiUrl } from "./api-url";
 import { AssistantTriggerLink } from "./assistant-trigger-link";
 import { formatPrice } from "./data";
 import { useCart } from "./store-provider";
@@ -13,7 +14,6 @@ const mockAddresses = [
   "Calle El Conde 54, Zona Colonial, Santo Domingo",
   "Av. Charles de Gaulle 18, Santo Domingo Este",
 ];
-const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 
 export function CartPage() {
   const { items, subtotal, setQuantity, removeProduct, clearCart } = useCart();

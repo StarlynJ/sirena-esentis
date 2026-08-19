@@ -1,3 +1,4 @@
+import { API_URL } from "./api-url";
 import { formatPrice, type Product } from "./data";
 import type { SkinProfileKey } from "./skin-description-ai";
 
@@ -87,7 +88,7 @@ function localSessionSlug() {
 }
 
 export async function createProductChatSession(name: string, age: number) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+  const apiUrl = API_URL;
   try {
     const response = await fetch(`${apiUrl}/api/chat/sessions`, {
       method: "POST",
@@ -107,7 +108,7 @@ export async function createProductChatSession(name: string, age: number) {
 export async function answerProductQuestion(question: string, profile: SkinProfileKey, recentMessages: string[], context: BackendContext, products: Product[]): Promise<ProductChatAnswer> {
   if (!domainTerms.test(question)) return { answer: fallbackAnswer(question, profile, products), sessionSlug: context.sessionSlug };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+  const apiUrl = API_URL;
   try {
     const response = await fetch(`${apiUrl}/api/chat/answer`, {
       method: "POST",
