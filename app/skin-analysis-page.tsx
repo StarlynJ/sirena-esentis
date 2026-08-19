@@ -256,11 +256,12 @@ export function SkinAnalysisPage() {
       setAdded(false);
       setTab(window.location.hash === "#colorimetria" ? "color" : "skin");
       setStage("report");
+      const sessionSlug = new URLSearchParams(window.location.search).get("sesion");
       void fetch(`${API_URL}/api/skin-analyses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId: null,
+          sessionSlug,
           overallScore: nextReport.overall,
           skinType: nextReport.skinType,
           confidence: nextReport.confidence,

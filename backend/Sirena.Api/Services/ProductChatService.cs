@@ -41,6 +41,10 @@ public sealed partial class ProductChatService(HttpClient httpClient, IConfigura
             {
                 logger.LogWarning(exception, "Gemini was unavailable; using the catalog knowledge fallback.");
             }
+            catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(exception, "Gemini timed out; using the catalog knowledge fallback.");
+            }
         }
 
         return new(Fallback(question, skinProfile, products), false);

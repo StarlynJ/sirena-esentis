@@ -22,9 +22,10 @@ public sealed class Product
 public sealed class ChatSession
 {
     public long Id { get; set; }
+    [MaxLength(40)] public required string Slug { get; set; }
     [MaxLength(80)] public required string Name { get; set; }
     public short Age { get; set; }
-    [MaxLength(24)] public required string SkinProfile { get; set; }
+    [MaxLength(24)] public string? SkinProfile { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public ICollection<ChatMessage> Messages { get; set; } = [];
     public ICollection<SkinAnalysis> SkinAnalyses { get; set; } = [];

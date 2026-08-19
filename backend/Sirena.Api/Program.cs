@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
@@ -80,30 +81,45 @@ api.MapGet("/products/{id:long}", async (long id, AppDbContext db, CancellationT
 
 api.MapPost("/chat/sessions", async (CreateChatSessionRequest request, AppDbContext db, CancellationToken cancellationToken) =>
 {
-    if (!ValidProfile(request.SkinProfile) || request.Age is < 13 or > 99 || string.IsNullOrWhiteSpace(request.Name))
-        return Results.ValidationProblem(new Dictionary<string, string[]> { ["session"] = ["Nombre, edad de 13–99 y perfil válido son obligatorios."] });
-    var session = new ChatSession { Name = request.Name.Trim()[..Math.Min(request.Name.Trim().Length, 80)], Age = request.Age, SkinProfile = request.SkinProfile.ToLower(), CreatedAt = DateTimeOffset.UtcNow };
+    if (request.Age is < 13 or > 99 || string.IsNullOrWhiteSpace(request.Name))
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["session"] = ["Nombre y edad de 13–99 son obligatorios."] });
+    var session = new ChatSession { Slug = CreateSessionSlug(), Name = SafeName(request.Name), Age = request.Age, CreatedAt = DateTimeOffset.UtcNow };
     db.ChatSessions.Add(session);
     await db.SaveChangesAsync(cancellationToken);
-    return Results.Created($"/api/chat/sessions/{session.Id}", new { session.Id, session.Name, session.Age, session.SkinProfile });
+    return Results.Created($"/api/chat/sessions/{session.Slug}", new { session.Slug, session.Name, session.Age, session.SkinProfile });
 });
 
-api.MapGet("/chat/sessions/{id:long}/messages", async (long id, AppDbContext db, CancellationToken cancellationToken) =>
-    Results.Ok(await db.ChatMessages.AsNoTracking().Where(message => message.ChatSessionId == id).OrderBy(message => message.CreatedAt).Select(message => new { message.Id, message.Role, message.Content, message.CreatedAt }).ToListAsync(cancellationToken)));
+api.MapGet("/chat/sessions/{slug}", async (string slug, AppDbContext db, CancellationToken cancellationToken) =>
+    await db.ChatSessions.AsNoTracking().Where(session => session.Slug == slug).Select(session => new
+    {
+        session.Slug,
+        session.Name,
+        session.Age,
+        session.SkinProfile,
+        Messages = session.Messages.OrderBy(message => message.CreatedAt).Select(message => new { message.Role, message.Content, message.CreatedAt })
+    }).SingleOrDefaultAsync(cancellationToken) is { } session ? Results.Ok(session) : Results.NotFound());
+
+api.MapGet("/chat/sessions/{slug}/messages", async (string slug, AppDbContext db, CancellationToken cancellationToken) =>
+    await db.ChatSessions.AsNoTracking().Where(session => session.Slug == slug).Select(session => session.Messages.OrderBy(message => message.CreatedAt).Select(message => new { message.Id, message.Role, message.Content, message.CreatedAt }).ToList()).SingleOrDefaultAsync(cancellationToken) is { } messages
+        ? Results.Ok(messages)
+        : Results.NotFound());
 
 api.MapPost("/chat/answer", async (ChatAnswerRequest request, AppDbContext db, IProductChatService chat, CancellationToken cancellationToken) =>
 {
     if (!ValidProfile(request.SkinProfile) || string.IsNullOrWhiteSpace(request.Question) || request.Question.Length > 800)
         return Results.ValidationProblem(new Dictionary<string, string[]> { ["question"] = ["Perfil válido y pregunta de hasta 800 caracteres son obligatorios."] });
 
-    ChatSession? session = request.SessionId is null ? null : await db.ChatSessions.SingleOrDefaultAsync(item => item.Id == request.SessionId, cancellationToken);
+    ChatSession? session = string.IsNullOrWhiteSpace(request.SessionSlug) ? null : await db.ChatSessions.SingleOrDefaultAsync(item => item.Slug == request.SessionSlug, cancellationToken);
     if (session is null)
     {
         var safeAge = request.Age is >= 13 and <= 99 ? request.Age : (short)18;
-        var safeName = string.IsNullOrWhiteSpace(request.Name) ? "Visitante" : request.Name.Trim()[..Math.Min(request.Name.Trim().Length, 80)];
-        session = new ChatSession { Name = safeName, Age = safeAge, SkinProfile = request.SkinProfile.ToLower(), CreatedAt = DateTimeOffset.UtcNow };
+        session = new ChatSession { Slug = CreateSessionSlug(), Name = SafeName(request.Name), Age = safeAge, SkinProfile = request.SkinProfile.ToLower(), CreatedAt = DateTimeOffset.UtcNow };
         db.ChatSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
+    }
+    else if (session.SkinProfile != request.SkinProfile.ToLowerInvariant())
+    {
+        session.SkinProfile = request.SkinProfile.ToLowerInvariant();
     }
 
     var recent = await db.ChatMessages.AsNoTracking().Where(message => message.ChatSessionId == session.Id).OrderByDescending(message => message.CreatedAt).Take(4).OrderBy(message => message.CreatedAt).Select(message => message.Content).ToListAsync(cancellationToken);
@@ -113,15 +129,18 @@ api.MapPost("/chat/answer", async (ChatAnswerRequest request, AppDbContext db, I
     var assistantMessage = new ChatMessage { ChatSessionId = session.Id, Role = "assistant", Content = result.Answer, CreatedAt = DateTimeOffset.UtcNow.AddTicks(1) };
     db.ChatMessages.AddRange(userMessage, assistantMessage);
     await db.SaveChangesAsync(cancellationToken);
-    return Results.Ok(new ChatAnswerResponse(session.Id, result.Answer, result.UsedGenerativeAi));
+    return Results.Ok(new ChatAnswerResponse(session.Slug, result.Answer, result.UsedGenerativeAi));
 });
 
 api.MapPost("/skin-analyses", async (SaveSkinAnalysisRequest request, AppDbContext db, CancellationToken cancellationToken) =>
 {
     if (!ValidProfile(request.SkinType) || request.OverallScore is < 0 or > 100 || request.Confidence is < 0 or > 100)
         return Results.ValidationProblem(new Dictionary<string, string[]> { ["analysis"] = ["Puntuaciones de 0–100 y tipo de piel válido son obligatorios."] });
-    if (request.SessionId is not null && !await db.ChatSessions.AnyAsync(session => session.Id == request.SessionId, cancellationToken)) return Results.NotFound();
-    var analysis = new SkinAnalysis { ChatSessionId = request.SessionId, OverallScore = request.OverallScore, SkinType = request.SkinType.ToLower(), Confidence = request.Confidence, MetricsJson = request.Metrics.GetRawText(), ColorimetryJson = request.Colorimetry.GetRawText(), CreatedAt = DateTimeOffset.UtcNow };
+    var sessionId = string.IsNullOrWhiteSpace(request.SessionSlug)
+        ? null
+        : (long?)await db.ChatSessions.Where(session => session.Slug == request.SessionSlug).Select(session => session.Id).SingleOrDefaultAsync(cancellationToken);
+    if (!string.IsNullOrWhiteSpace(request.SessionSlug) && sessionId is null or 0) return Results.NotFound();
+    var analysis = new SkinAnalysis { ChatSessionId = sessionId, OverallScore = request.OverallScore, SkinType = request.SkinType.ToLower(), Confidence = request.Confidence, MetricsJson = request.Metrics.GetRawText(), ColorimetryJson = request.Colorimetry.GetRawText(), CreatedAt = DateTimeOffset.UtcNow };
     db.SkinAnalyses.Add(analysis);
     await db.SaveChangesAsync(cancellationToken);
     return Results.Created($"/api/skin-analyses/{analysis.Id}", new { analysis.Id });
@@ -177,5 +196,7 @@ api.MapGet("/maps/autocomplete", async (string input, IConfiguration configurati
 app.Run();
 
 static bool ValidProfile(string value) => value.ToLowerInvariant() is "seca" or "grasa" or "mixta" or "sensible" or "normal";
+static string SafeName(string value) => string.IsNullOrWhiteSpace(value) ? "Visitante" : value.Trim()[..Math.Min(value.Trim().Length, 80)];
+static string CreateSessionSlug() => $"sesion-{Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant()}";
 
 public partial class Program { }

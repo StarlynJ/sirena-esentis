@@ -33,8 +33,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.ToTable("chat_sessions", table =>
             {
                 table.HasCheckConstraint("ck_chat_sessions_age", "age between 13 and 99");
-                table.HasCheckConstraint("ck_chat_sessions_skin_profile", "skin_profile in ('seca', 'grasa', 'mixta', 'sensible', 'normal')");
+                table.HasCheckConstraint("ck_chat_sessions_skin_profile", "skin_profile is null or skin_profile in ('seca', 'grasa', 'mixta', 'sensible', 'normal')");
             });
+            entity.HasIndex(x => x.Slug).IsUnique().HasDatabaseName("ux_chat_sessions_slug");
             entity.HasIndex(x => x.CreatedAt).HasDatabaseName("ix_chat_sessions_created_at");
         });
 

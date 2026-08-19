@@ -77,22 +77,47 @@ function fallbackAnswer(question: string, profile: SkinProfileKey) {
   return `Para piel ${profile}, puedo orientarte sobre ${suitable.join(", ")}. Pregúntame por precio, función, orden de uso o diferencias entre productos.`;
 }
 
-type BackendContext = { name: string; age: number; sessionId: number | null };
-export type ProductChatAnswer = { answer: string; sessionId: number | null };
+type BackendContext = { name: string; age: number; sessionSlug: string | null };
+export type ProductChatAnswer = { answer: string; sessionSlug: string | null };
+
+function localSessionSlug() {
+  const token = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID().replaceAll("-", "").slice(0, 16)
+    : `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.slice(0, 16);
+  return `sesion-${token}`;
+}
+
+export async function createProductChatSession(name: string, age: number) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+  try {
+    const response = await fetch(`${apiUrl}/api/chat/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, age }),
+    });
+    if (response.ok) {
+      const result = await response.json() as { slug: string };
+      if (/^sesion-[a-z0-9-]{8,32}$/.test(result.slug)) return result.slug;
+    }
+  } catch {
+    // A local slug keeps the static Cloudflare prototype functional without the API.
+  }
+  return localSessionSlug();
+}
 
 export async function answerProductQuestion(question: string, profile: SkinProfileKey, recentMessages: string[], context: BackendContext): Promise<ProductChatAnswer> {
-  if (!domainTerms.test(question)) return { answer: fallbackAnswer(question, profile), sessionId: context.sessionId };
+  if (!domainTerms.test(question)) return { answer: fallbackAnswer(question, profile), sessionSlug: context.sessionSlug };
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
   try {
     const response = await fetch(`${apiUrl}/api/chat/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: context.sessionId, name: context.name, age: context.age, skinProfile: profile, question }),
+      body: JSON.stringify({ sessionSlug: context.sessionSlug, name: context.name, age: context.age, skinProfile: profile, question }),
     });
     if (response.ok) {
-      const result = await response.json() as { answer: string; sessionId: number };
-      return { answer: result.answer, sessionId: result.sessionId };
+      const result = await response.json() as { answer: string; sessionSlug: string };
+      return { answer: result.answer, sessionSlug: result.sessionSlug };
     }
   } catch {
     // The local responder keeps the prototype usable when the API is offline.
@@ -107,11 +132,11 @@ export async function answerProductQuestion(question: string, profile: SkinProfi
         const session = await languageModel.create(options);
         const response = await session.prompt(`${systemPrompt}\n\nPERFIL PROBABLE: ${profile}\nCONVERSACIÓN RECIENTE: ${recentMessages.slice(-4).join(" | ")}\nPREGUNTA: ${question}\nBASE_DE_CONOCIMIENTO: ${JSON.stringify(buildKnowledgeContext())}`);
         session.destroy?.();
-        return { answer: response.trim().slice(0, 900), sessionId: context.sessionId };
+        return { answer: response.trim().slice(0, 900), sessionSlug: context.sessionSlug };
       }
     } catch {
       // Continue with the deterministic knowledge-base responder.
     }
   }
-  return { answer: fallbackAnswer(question, profile), sessionId: context.sessionId };
+  return { answer: fallbackAnswer(question, profile), sessionSlug: context.sessionSlug };
 }

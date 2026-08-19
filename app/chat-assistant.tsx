@@ -5,13 +5,15 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { OPEN_ASSISTANT_EVENT } from "./assistant-trigger-link";
 import { formatPrice, products } from "./data";
-import { answerProductQuestion } from "./product-chat-engine";
+import { answerProductQuestion, createProductChatSession } from "./product-chat-engine";
 import { analyzeDescriptionWithBrowserAI } from "./skin-description-ai";
 import { useCart } from "./store-provider";
 
 type Stage = "intro" | "skin" | "chat";
 type ProfileKey = "seca" | "grasa" | "mixta" | "sensible" | "normal";
 type ChatMessage = { role: "assistant" | "user"; text: string };
+type StoredChatSession = { name: string; age: string; stage: Stage; profile: ProfileKey | null; messages: ChatMessage[] };
+const SESSION_STORAGE_PREFIX = "sirena-esentis-session:";
 
 const mockProfiles: Record<ProfileKey, { label: string; response: string; ids: number[] }> = {
   seca: { label: "Piel seca", response: "Tu descripción sugiere una piel que necesita limpieza suave y apoyo de hidratación.", ids: [1, 6, 7] },
@@ -50,21 +52,47 @@ export function ChatAssistant() {
   const [chatInput, setChatInput] = useState("");
   const [addedProducts, setAddedProducts] = useState<number[]>([]);
   const [analyzingText, setAnalyzingText] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
   const [answering, setAnswering] = useState(false);
-  const [backendSessionId, setBackendSessionId] = useState<number | null>(null);
+  const [sessionSlug, setSessionSlug] = useState<string | null>(null);
   const conversationFeedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const openAssistant = () => setOpen(true);
     window.addEventListener(OPEN_ASSISTANT_EVENT, openAssistant);
-    const openTimer = new URLSearchParams(window.location.search).get("asesor") === "1"
+    const query = new URLSearchParams(window.location.search);
+    const slug = query.get("sesion");
+    const restoreTimer = slug ? window.setTimeout(() => {
+      setSessionSlug(slug);
+      setOpen(true);
+      try {
+        const stored = JSON.parse(localStorage.getItem(`${SESSION_STORAGE_PREFIX}${slug}`) ?? "null") as StoredChatSession | null;
+        if (stored) {
+          setName(stored.name);
+          setAge(stored.age);
+          setStage(stored.stage);
+          setProfile(stored.profile);
+          setMessages(stored.messages);
+        }
+      } catch {
+        localStorage.removeItem(`${SESSION_STORAGE_PREFIX}${slug}`);
+      }
+    }, 0) : undefined;
+    const openTimer = query.get("asesor") === "1"
       ? window.setTimeout(openAssistant, 0)
       : undefined;
     return () => {
       window.removeEventListener(OPEN_ASSISTANT_EVENT, openAssistant);
       if (openTimer !== undefined) window.clearTimeout(openTimer);
+      if (restoreTimer !== undefined) window.clearTimeout(restoreTimer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionSlug) return;
+    const snapshot: StoredChatSession = { name, age, stage, profile, messages };
+    localStorage.setItem(`${SESSION_STORAGE_PREFIX}${sessionSlug}`, JSON.stringify(snapshot));
+  }, [age, messages, name, profile, sessionSlug, stage]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,10 +119,22 @@ export function ChatAssistant() {
     [recommendation],
   );
 
-  function submitIntro(event: FormEvent) {
+  function updateSessionUrl(slug: string) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("sesion", slug);
+    url.searchParams.delete("asesor");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  async function submitIntro(event: FormEvent) {
     event.preventDefault();
-    if (!name.trim() || !age || Number(age) < 13 || Number(age) > 99) return;
+    if (!name.trim() || !age || Number(age) < 13 || Number(age) > 99 || creatingSession) return;
+    setCreatingSession(true);
+    const slug = await createProductChatSession(name.trim(), Number(age));
+    setSessionSlug(slug);
+    updateSessionUrl(slug);
     setStage("skin");
+    setCreatingSession(false);
   }
 
   function resolveProfile(key: ProfileKey) {
@@ -103,7 +143,6 @@ export function ChatAssistant() {
       { role: "assistant", text: `${mockProfiles[key].response} Te dejo una recomendación inicial, pero podemos seguir conversando: pregúntame por precios, diferencias, orden de uso o cualquier producto de este catálogo Sirena.` },
     ]);
     setAddedProducts([]);
-    setBackendSessionId(null);
     setStage("chat");
   }
 
@@ -122,8 +161,11 @@ export function ChatAssistant() {
     setMessages((current) => [...current, userMessage]);
     setChatInput("");
     setAnswering(true);
-    const result = await answerProductQuestion(value, profile, messages.map((message) => message.text), { name, age: Number(age), sessionId: backendSessionId });
-    setBackendSessionId(result.sessionId);
+    const result = await answerProductQuestion(value, profile, messages.map((message) => message.text), { name, age: Number(age), sessionSlug });
+    if (result.sessionSlug && result.sessionSlug !== sessionSlug) {
+      setSessionSlug(result.sessionSlug);
+      updateSessionUrl(result.sessionSlug);
+    }
     setMessages((current) => [...current, { role: "assistant", text: result.answer }]);
     setAnswering(false);
   }
@@ -166,7 +208,7 @@ export function ChatAssistant() {
                   <label>¿Cómo te llamas?<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Escribe tu nombre" required /></label>
                   <label>¿Qué edad tienes?<input value={age} onChange={(event) => setAge(event.target.value.replace(/\D/g, "").slice(0, 2))} placeholder="Ej. 28" inputMode="numeric" required /></label>
                   <p className="form-note">Usaremos estos datos solo durante esta demostración. Edad permitida: 13–99.</p>
-                  <button className="assistant-primary" type="submit">Comenzar <ArrowRight size={18} /></button>
+                  <button className="assistant-primary" type="submit" disabled={creatingSession}>{creatingSession ? <><LoaderCircle className="spin" size={18} /> Creando sesión…</> : <>Comenzar <ArrowRight size={18} /></>}</button>
                 </form>
               </div>
             )}
@@ -183,7 +225,7 @@ export function ChatAssistant() {
                   <p>Descríbela con tus palabras. Ejemplos: “me brilla la nariz, pero mis mejillas se sienten secas” o “se me irrita con productos nuevos”.</p>
                   <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Cuéntame cómo se siente tu piel..." />
                   <button type="button" onClick={() => void analyzeDescription()} disabled={!description.trim() || analyzingText}><Sparkles size={17} /> {analyzingText ? "Analizando…" : "Analizar descripción"}</button>
-                  <Link className="face-analysis-link" href="/analisis-piel" onClick={() => setOpen(false)}><span>¿Prefieres que la cámara te oriente?</span><strong>Analizar mi rostro <ArrowRight size={16} /></strong></Link>
+                  <Link className="face-analysis-link" href={sessionSlug ? `/analisis-piel?sesion=${encodeURIComponent(sessionSlug)}` : "/analisis-piel"} onClick={() => setOpen(false)}><span>¿Prefieres que la cámara te oriente?</span><strong>Analizar mi rostro <ArrowRight size={16} /></strong></Link>
                 </div>
                 <div className="assistant-disclaimer"><CircleAlert size={18} /><span>La clasificación es una posibilidad orientativa, no un diagnóstico. Si presentas molestias persistentes, consulta a dermatología.</span></div>
               </div>
@@ -232,6 +274,7 @@ export function ChatAssistant() {
                   <button type="submit" disabled={!chatInput.trim() || answering} aria-label="Enviar pregunta"><Send size={18} /></button>
                 </form>
                 <div className="conversation-scope"><ShieldCheck size={15} /> Solo responde sobre los productos cargados del catálogo Sirena. No inventa ingredientes ni disponibilidad.</div>
+                {sessionSlug && <div className="conversation-session" title="Identificador de esta conversación">Sesión: <strong>{sessionSlug}</strong></div>}
                 <div className="conversation-footer-links"><Link href="/esentis" onClick={() => setOpen(false)}>Ver catálogo</Link><Link href="/carrito" onClick={() => setOpen(false)}>Ir al carrito</Link></div>
               </div>
             )}
