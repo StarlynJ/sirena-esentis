@@ -29,13 +29,13 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Descubre tu rutina Esentis",
     description: "Una experiencia personalizada en Sirena.",
-    images: [{ url: "/og-esentis.png", width: 1200, height: 630 }],
+    images: [{ url: `${siteUrl}/og-esentis.png`, width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Descubre tu rutina Esentis",
     description: "Una experiencia personalizada en Sirena.",
-    images: ["/og-esentis.png"],
+    images: [`${siteUrl}/og-esentis.png`],
   },
 };
 
