@@ -94,14 +94,24 @@ function localSessionSlug() {
   return `sesion-${token}`;
 }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function createProductChatSession(name: string, age: number) {
   const apiUrl = API_URL;
   try {
-    const response = await fetch(`${apiUrl}/api/chat/sessions`, {
+    const response = await fetchWithTimeout(`${apiUrl}/api/chat/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, age }),
-    });
+    }, 12000);
     if (response.ok) {
       const result = await response.json() as { slug: string };
       if (/^sesion-[a-z0-9-]{8,32}$/.test(result.slug)) return result.slug;
@@ -117,11 +127,11 @@ export async function answerProductQuestion(question: string, profile: SkinProfi
 
   const apiUrl = API_URL;
   try {
-    const response = await fetch(`${apiUrl}/api/chat/answer`, {
+    const response = await fetchWithTimeout(`${apiUrl}/api/chat/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionSlug: context.sessionSlug, name: context.name, age: context.age, skinProfile: profile, question }),
-    });
+    }, 15000);
     if (response.ok) {
       const result = await response.json() as { answer: string; sessionSlug: string };
       return { answer: result.answer, sessionSlug: result.sessionSlug };

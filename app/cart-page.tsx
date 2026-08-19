@@ -1,11 +1,11 @@
 "use client";
 
 import { Check, ChevronDown, LocateFixed, LoaderCircle, MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API_URL as apiUrl } from "./api-url";
 import { AssistantTriggerLink } from "./assistant-trigger-link";
 import { formatPrice } from "./data";
+import { HardLink } from "./hard-link";
 import { useCart } from "./store-provider";
 
 const mockAddresses = [
@@ -107,15 +107,15 @@ export function CartPage() {
   }
 
   if (completed) {
-    return <main className="cart-page"><div className="checkout-success"><span><Check size={31} /></span><h1>¡Pedido de demostración confirmado!</h1><p>Pedido #{orderId}. Se guardó en PostgreSQL, pero no se procesó ningún pago real.</p><Link href="/">Volver al inicio</Link></div></main>;
+    return <main className="cart-page"><div className="checkout-success"><span><Check size={31} /></span><h1>¡Pedido de demostración confirmado!</h1><p>Pedido #{orderId}. Se guardó en PostgreSQL, pero no se procesó ningún pago real.</p><HardLink href="/">Volver al inicio</HardLink></div></main>;
   }
 
   return (
     <main className="cart-page">
-      <div className="breadcrumb"><Link href="/">Inicio</Link><span>/</span><strong>Mi carrito</strong></div>
+      <div className="breadcrumb"><HardLink href="/">Inicio</HardLink><span>/</span><strong>Mi carrito</strong></div>
       <div className="cart-page-heading"><div><span>Compra segura</span><h1>Mi carrito</h1></div>{items.length > 0 && <button type="button" onClick={clearCart}><Trash2 size={16} /> Vaciar carrito</button>}</div>
       {!items.length ? (
-        <section className="empty-cart-page"><img src="/mascot/mascot-default.png" alt="Asesora Esentis" /><div><ShoppingBag size={34} /><h2>Tu carrito está vacío</h2><p>Descubre la línea Esentis o recibe una recomendación personalizada.</p><Link href="/esentis">Ver catálogo</Link><AssistantTriggerLink className="text-link" href="/esentis?asesor=1">Abrir asesora</AssistantTriggerLink></div></section>
+        <section className="empty-cart-page"><img src="/mascot/mascot-default.png" alt="Asesora Esentis" /><div><ShoppingBag size={34} /><h2>Tu carrito está vacío</h2><p>Descubre la línea Esentis o recibe una recomendación personalizada.</p><HardLink href="/esentis">Ver catálogo</HardLink><AssistantTriggerLink className="text-link" href="/esentis?asesor=1">Abrir asesora</AssistantTriggerLink></div></section>
       ) : (
         <div className="cart-checkout-layout">
           <section className="cart-lines" aria-label="Productos en el carrito">

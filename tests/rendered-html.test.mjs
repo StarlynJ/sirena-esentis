@@ -30,6 +30,7 @@ test("renders the Sirena homepage with the Esentis campaign", async () => {
   const html = await response.text();
   assert.match(html, /<title>Sirena — Compra fácil, vive mejor<\/title>/i);
   assert.match(html, /Tu piel tiene una historia\. Descúbrela\./i);
+  assert.match(html, /href="\/esentis"[^>]*>Ver productos<\/a>/i);
   assert.match(html, /\/mascot\/mascot-default\.png/i);
   assert.match(html, /\/og-esentis\.png/i);
   assert.doesNotMatch(html, /WhatsApp/i);

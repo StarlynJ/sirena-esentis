@@ -1,10 +1,9 @@
 "use client";
 
 import { ArrowLeft, ArrowRight, Check, CircleAlert, LoaderCircle, Send, ShieldCheck, ShoppingBag, Sparkles, X } from "lucide-react";
-import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { OPEN_ASSISTANT_EVENT } from "./assistant-trigger-link";
 import { formatPrice, isFacialCareProduct } from "./data";
+import { HardLink } from "./hard-link";
 import { answerProductQuestion, createProductChatSession } from "./product-chat-engine";
 import { analyzeDescriptionWithBrowserAI } from "./skin-description-ai";
 import { useCart } from "./store-provider";
@@ -41,7 +40,7 @@ function inferProfile(text: string): ProfileKey {
 }
 
 export function ChatAssistant() {
-  const { addProduct, products } = useCart();
+  const { addProduct, products, productsError, productsLoading } = useCart();
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("intro");
   const [name, setName] = useState("");
@@ -58,8 +57,6 @@ export function ChatAssistant() {
   const conversationFeedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const openAssistant = () => setOpen(true);
-    window.addEventListener(OPEN_ASSISTANT_EVENT, openAssistant);
     const query = new URLSearchParams(window.location.search);
     const slug = query.get("sesion");
     const restoreTimer = slug ? window.setTimeout(() => {
@@ -79,10 +76,9 @@ export function ChatAssistant() {
       }
     }, 0) : undefined;
     const openTimer = query.get("asesor") === "1"
-      ? window.setTimeout(openAssistant, 0)
+      ? window.setTimeout(() => setOpen(true), 0)
       : undefined;
     return () => {
-      window.removeEventListener(OPEN_ASSISTANT_EVENT, openAssistant);
       if (openTimer !== undefined) window.clearTimeout(openTimer);
       if (restoreTimer !== undefined) window.clearTimeout(restoreTimer);
     };
@@ -139,11 +135,14 @@ export function ChatAssistant() {
     event.preventDefault();
     if (!name.trim() || !age || Number(age) < 13 || Number(age) > 99 || creatingSession) return;
     setCreatingSession(true);
-    const slug = await createProductChatSession(name.trim(), Number(age));
-    setSessionSlug(slug);
-    updateSessionUrl(slug);
-    setStage("skin");
-    setCreatingSession(false);
+    try {
+      const slug = await createProductChatSession(name.trim(), Number(age));
+      setSessionSlug(slug);
+      updateSessionUrl(slug);
+      setStage("skin");
+    } finally {
+      setCreatingSession(false);
+    }
   }
 
   function resolveProfile(key: ProfileKey) {
@@ -158,9 +157,12 @@ export function ChatAssistant() {
   async function analyzeDescription() {
     if (!description.trim()) return;
     setAnalyzingText(true);
-    const aiProfile = await analyzeDescriptionWithBrowserAI(description);
-    resolveProfile(aiProfile ?? inferProfile(description));
-    setAnalyzingText(false);
+    try {
+      const aiProfile = await analyzeDescriptionWithBrowserAI(description);
+      resolveProfile(aiProfile ?? inferProfile(description));
+    } finally {
+      setAnalyzingText(false);
+    }
   }
 
   async function sendQuestion(question = chatInput) {
@@ -170,13 +172,18 @@ export function ChatAssistant() {
     setMessages((current) => [...current, userMessage]);
     setChatInput("");
     setAnswering(true);
-    const result = await answerProductQuestion(value, profile, messages.map((message) => message.text), { name, age: Number(age), sessionSlug }, products);
-    if (result.sessionSlug && result.sessionSlug !== sessionSlug) {
-      setSessionSlug(result.sessionSlug);
-      updateSessionUrl(result.sessionSlug);
+    try {
+      const result = await answerProductQuestion(value, profile, messages.map((message) => message.text), { name, age: Number(age), sessionSlug }, products);
+      if (result.sessionSlug && result.sessionSlug !== sessionSlug) {
+        setSessionSlug(result.sessionSlug);
+        updateSessionUrl(result.sessionSlug);
+      }
+      setMessages((current) => [...current, { role: "assistant", text: result.answer }]);
+    } catch {
+      setMessages((current) => [...current, { role: "assistant", text: "No pude completar la consulta en este momento. Intenta nuevamente; tu conversación sigue abierta." }]);
+    } finally {
+      setAnswering(false);
     }
-    setMessages((current) => [...current, { role: "assistant", text: result.answer }]);
-    setAnswering(false);
   }
 
   function addRecommendedProduct(productId: number) {
@@ -233,8 +240,9 @@ export function ChatAssistant() {
                   <strong>¿No sabes tu tipo de piel?</strong>
                   <p>Descríbela con tus palabras. Ejemplos: “me brilla la nariz, pero mis mejillas se sienten secas” o “se me irrita con productos nuevos”.</p>
                   <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Cuéntame cómo se siente tu piel..." />
-                  <button type="button" onClick={() => void analyzeDescription()} disabled={!description.trim() || analyzingText}><Sparkles size={17} /> {analyzingText ? "Analizando…" : "Analizar descripción"}</button>
-                  <Link className="face-analysis-link" href={sessionSlug ? `/analisis-piel?sesion=${encodeURIComponent(sessionSlug)}` : "/analisis-piel"} onClick={() => setOpen(false)}><span>¿Prefieres que la cámara te oriente?</span><strong>Analizar mi rostro <ArrowRight size={16} /></strong></Link>
+                  <button type="button" onClick={() => void analyzeDescription()} disabled={!description.trim() || analyzingText}>{analyzingText ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />} {analyzingText ? "Analizando…" : "Analizar descripción"}</button>
+                  {analyzingText && <div className="description-analysis-waiting" role="status">Buscando señales como brillo, tirantez, rojeces y zona T…</div>}
+                  <HardLink className="face-analysis-link" href={sessionSlug ? `/analisis-piel?sesion=${encodeURIComponent(sessionSlug)}` : "/analisis-piel"}><span>¿Prefieres que la cámara te oriente?</span><strong>Analizar mi rostro <ArrowRight size={16} /></strong></HardLink>
                 </div>
                 <div className="assistant-disclaimer"><CircleAlert size={18} /><span>La clasificación es una posibilidad orientativa, no un diagnóstico. Si presentas molestias persistentes, consulta a dermatología.</span></div>
               </div>
@@ -245,7 +253,7 @@ export function ChatAssistant() {
                 <div className="conversation-toolbar">
                   <button className="assistant-back" type="button" onClick={() => setStage("skin")}><ArrowLeft size={17} /> Cambiar perfil</button>
                   <span>Perfil probable: <strong>{recommendation.label}</strong></span>
-                  <button className="probability-info" type="button" title="Es una posibilidad basada en tus respuestas. No reemplaza la evaluación de dermatología."><CircleAlert size={18} /></button>
+                  <button className="probability-info" type="button" aria-describedby="profile-probability-tooltip"><CircleAlert size={18} /><span id="profile-probability-tooltip" role="tooltip">Es una posibilidad basada en tus respuestas. No reemplaza la evaluación de dermatología.</span></button>
                 </div>
 
                 <div className="conversation-feed" aria-live="polite" ref={conversationFeedRef}>
@@ -258,7 +266,10 @@ export function ChatAssistant() {
 
                   <div className="conversation-recommendation">
                     <header><div><span>Recomendación inicial</span><strong>Rutina para {name}</strong></div><small>Sin compromiso de compra</small></header>
-                    <div className="chat-product-list">
+                    {productsLoading && <div className="recommendation-waiting" role="status"><LoaderCircle className="spin" size={20} /><div><strong>Preparando tu selección</strong><span>Consultando productos Esentis disponibles…</span></div></div>}
+                    {!productsLoading && productsError && <div className="recommendation-empty" role="alert">No pudimos cargar los productos. Reintentaremos cuando vuelvas a abrir la asesora.</div>}
+                    {!productsLoading && !productsError && recommendedProducts.length === 0 && <div className="recommendation-empty">No encontramos una combinación para este perfil en el catálogo vigente.</div>}
+                    {!productsLoading && recommendedProducts.length > 0 && <div className="chat-product-list">
                       {recommendedProducts.map((product) => (
                         <article key={product.id}>
                           <img src={product.image} alt="" />
@@ -268,11 +279,11 @@ export function ChatAssistant() {
                           </button>
                         </article>
                       ))}
-                    </div>
+                    </div>}
                     <p>Haz prueba de parche y agrega un producto nuevo a la vez. Puedes preguntarme por cualquiera antes de decidir.</p>
                   </div>
 
-                  {answering && <div className="conversation-message assistant thinking"><span>E</span><p><LoaderCircle size={16} /> Consultando el catálogo…</p></div>}
+                  {answering && <div className="assistant-waiting" role="status" aria-live="polite"><span className="waiting-orbit"><i /><i /><i /></span><div><strong>La asesora está revisando el catálogo</strong><small>Comparando productos y preparando una respuesta para ti…</small></div></div>}
                 </div>
 
                 <div className="suggested-questions" aria-label="Preguntas sugeridas">
@@ -283,8 +294,7 @@ export function ChatAssistant() {
                   <button type="submit" disabled={!chatInput.trim() || answering} aria-label="Enviar pregunta"><Send size={18} /></button>
                 </form>
                 <div className="conversation-scope"><ShieldCheck size={15} /> Solo responde sobre los productos cargados del catálogo Sirena. No inventa ingredientes ni disponibilidad.</div>
-                {sessionSlug && <div className="conversation-session" title="Identificador de esta conversación">Sesión: <strong>{sessionSlug}</strong></div>}
-                <div className="conversation-footer-links"><Link href="/esentis" onClick={() => setOpen(false)}>Ver catálogo</Link><Link href="/carrito" onClick={() => setOpen(false)}>Ir al carrito</Link></div>
+                <div className="conversation-footer-links"><HardLink href="/esentis">Ver catálogo</HardLink><HardLink href="/carrito">Ir al carrito</HardLink></div>
               </div>
             )}
           </section>

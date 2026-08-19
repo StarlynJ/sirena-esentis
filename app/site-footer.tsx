@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { HardLink } from "./hard-link";
 
 const footerColumns = [
   { title: "Sirena.do", links: ["Sobre nosotros", "Sobre Grupo Ramos", "Nuestras tiendas"] },
@@ -44,7 +44,7 @@ export function SiteFooter() {
         </div>
         {footerColumns.map((column) => (
           <div className="footer-column" key={column.title}>
-            <h3>{column.title}</h3>{column.links.map((link) => <Link href={`/?info=${encodeURIComponent(link)}`} key={link}>{link}</Link>)}
+            <h3>{column.title}</h3>{column.links.map((link) => <HardLink href={`/?info=${encodeURIComponent(link)}`} key={link}>{link}</HardLink>)}
           </div>
         ))}
       </div>

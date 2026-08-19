@@ -1,17 +1,17 @@
-import Link from "next/link";
 import { AssistantTriggerLink } from "./assistant-trigger-link";
 import { categories } from "./data";
+import { HardLink } from "./hard-link";
 import { Newsletter, ServiceBenefits } from "./site-footer";
 
 export function HomePage() {
   return (
     <main className="home-page">
       <section className="home-mosaic" aria-label="Promociones destacadas">
-        <Link className="mosaic-school" href="/?promo=escolares"><img src="/home/temporada-escolar.webp" alt="Temporada Escolar" /></Link>
-        <Link className="mosaic-fresh" href="/?promo=frescura"><img src="/home/frescura.png" alt="Bienestar en cada bocado" /></Link>
-        <Link className="mosaic-beauty" href="/esentis"><img src="/home/belleza.webp" alt="Belleza que se nota" /></Link>
-        <Link className="mosaic-tech" href="/?promo=innovacion"><img src="/home/innovacion.webp" alt="Innovación a tu alcance" /></Link>
-        <Link className="mosaic-meat" href="/?promo=carnes"><img src="/home/carnes.webp" alt="Lo mejor en carnes" /></Link>
+        <HardLink className="mosaic-school" href="/?promo=escolares"><img src="/home/temporada-escolar.webp" alt="Temporada Escolar" /></HardLink>
+        <HardLink className="mosaic-fresh" href="/?promo=frescura"><img src="/home/frescura.png" alt="Bienestar en cada bocado" /></HardLink>
+        <HardLink className="mosaic-beauty" href="/esentis"><img src="/home/belleza.webp" alt="Belleza que se nota" /></HardLink>
+        <HardLink className="mosaic-tech" href="/?promo=innovacion"><img src="/home/innovacion.webp" alt="Innovación a tu alcance" /></HardLink>
+        <HardLink className="mosaic-meat" href="/?promo=carnes"><img src="/home/carnes.webp" alt="Lo mejor en carnes" /></HardLink>
       </section>
 
       <section className="esentis-campaign-banner">
@@ -21,7 +21,7 @@ export function HomePage() {
           <p>Conoce tu perfil de piel probable y arma una rutina con productos Esentis de Sirena.</p>
           <div className="campaign-actions">
             <AssistantTriggerLink className="campaign-primary" href="/esentis?asesor=1">Descubrir mi rutina</AssistantTriggerLink>
-            <Link className="campaign-secondary" href="/esentis">Ver productos</Link>
+            <HardLink className="campaign-secondary" href="/esentis">Ver productos</HardLink>
           </div>
           <small>Orientación cosmética. No sustituye una evaluación dermatológica.</small>
         </div>
@@ -35,10 +35,10 @@ export function HomePage() {
         </div>
         <div className="category-slider">
           {categories.map((category) => (
-            <Link href={category.href} key={category.name}>
+            <HardLink href={category.href} key={category.name}>
               <img src={category.image} alt={category.name} />
               <span>{category.name}</span>
-            </Link>
+            </HardLink>
           ))}
         </div>
       </section>

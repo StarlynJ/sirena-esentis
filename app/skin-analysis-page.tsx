@@ -15,10 +15,10 @@ import {
   Sparkles,
   Upload,
 } from "lucide-react";
-import Link from "next/link";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "./api-url";
 import { formatPrice, type Product } from "./data";
+import { HardLink } from "./hard-link";
 import { useCart } from "./store-provider";
 
 type Stage = "intro" | "capture" | "analyzing" | "report";
@@ -473,7 +473,7 @@ export function SkinAnalysisPage() {
                   </label>
                 ))}
               </div>
-              <div className="analysis-cart-bar"><div><span>{selected.length} productos seleccionados</span><strong>{formatPrice(products.filter((product) => selected.includes(product.id)).reduce((sum, product) => sum + product.price, 0))}</strong></div>{added ? <Link href="/carrito"><ShoppingBag size={18} /> Ir al carrito</Link> : <button type="button" disabled={!selected.length} onClick={addSelection}>Agregar selección al carrito</button>}</div>
+              <div className="analysis-cart-bar"><div><span>{selected.length} productos seleccionados</span><strong>{formatPrice(products.filter((product) => selected.includes(product.id)).reduce((sum, product) => sum + product.price, 0))}</strong></div>{added ? <HardLink href="/carrito"><ShoppingBag size={18} /> Ir al carrito</HardLink> : <button type="button" disabled={!selected.length} onClick={addSelection}>Agregar selección al carrito</button>}</div>
               <button className="restart-link" type="button" onClick={restart}><RefreshCw size={16} /> Repetir análisis</button>
             </div>
           )}

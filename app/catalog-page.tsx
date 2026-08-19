@@ -1,10 +1,10 @@
 "use client";
 
 import { ChevronDown, Heart, X } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AssistantTriggerLink } from "./assistant-trigger-link";
 import { formatPrice } from "./data";
+import { HardLink } from "./hard-link";
 import { Newsletter, ServiceBenefits } from "./site-footer";
 import { useCart } from "./store-provider";
 
@@ -31,12 +31,12 @@ export function CatalogPage() {
 
   return (
     <main className="catalog-page">
-      <div className="breadcrumb"><Link href="/">Inicio</Link><span>/</span><strong>ESENTIS</strong></div>
+      <div className="breadcrumb"><HardLink href="/">Inicio</HardLink><span>/</span><strong>ESENTIS</strong></div>
       <section className="esentis-catalog-intro">
         <div><span>Línea de belleza Sirena</span><h1>Esentis</h1><p>Cuidado diario creado para acompañar tu piel.</p></div>
         <div className="catalog-intro-actions">
           <AssistantTriggerLink href="/esentis?asesor=1">Encontrar mi rutina</AssistantTriggerLink>
-          <Link href="/analisis-piel">Analizar mi piel</Link>
+          <HardLink href="/analisis-piel">Analizar mi piel</HardLink>
         </div>
       </section>
       <div className="catalog-layout">
@@ -74,7 +74,7 @@ export function CatalogPage() {
           <button className="show-more" type="button">Ver más productos</button>
         </section>
       </div>
-      <Link className="supermarket-banner" href="/?promo=supermercado"><img src="/banners/supermercado.webp" alt="Los imperdibles para tu mesa" /></Link>
+      <HardLink className="supermarket-banner" href="/?promo=supermercado"><img src="/banners/supermercado.webp" alt="Los imperdibles para tu mesa" /></HardLink>
       <ServiceBenefits /><Newsletter />
       {mobileFilters && <button className="filters-backdrop" type="button" aria-label="Cerrar filtros" onClick={() => setMobileFilters(false)} />}
     </main>
