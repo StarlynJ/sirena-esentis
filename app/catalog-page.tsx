@@ -4,14 +4,14 @@ import { ChevronDown, Heart, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AssistantTriggerLink } from "./assistant-trigger-link";
-import { formatPrice, products } from "./data";
+import { formatPrice } from "./data";
 import { Newsletter, ServiceBenefits } from "./site-footer";
 import { useCart } from "./store-provider";
 
 const filterGroups = ["Departamento", "Categoría", "Sub-Categoría", "Sub-Categoría 2", "Necesidad / Facial", "Necesidad / Tratamiento", "Presentación"];
 
 export function CatalogPage() {
-  const { addProduct } = useCart();
+  const { addProduct, products, productsLoading, productsError } = useCart();
   const [mobileFilters, setMobileFilters] = useState(false);
   const [openFilters, setOpenFilters] = useState<string[]>([]);
   const [sort, setSort] = useState("featured");
@@ -27,7 +27,7 @@ export function CatalogPage() {
     if (sort === "low") next.sort((a, b) => a.price - b.price);
     if (sort === "high") next.sort((a, b) => b.price - a.price);
     return next;
-  }, [sort]);
+  }, [products, sort]);
 
   return (
     <main className="catalog-page">
@@ -58,7 +58,8 @@ export function CatalogPage() {
             <button className="mobile-filter-button" type="button" onClick={() => setMobileFilters(true)}>Filtros <ChevronDown size={16} /></button>
             <label className="sort-select"><span>Ordenar por</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="featured">Destacados</option><option value="low">Menor precio</option><option value="high">Mayor precio</option></select></label>
           </div>
-          <div className="results-head"><strong>25 productos</strong><button type="button">Mostrar anteriores</button></div>
+          <div className="results-head"><strong>{productsLoading ? "Cargando productos…" : `${visibleProducts.length} productos`}</strong><button type="button">Mostrar anteriores</button></div>
+          {productsError && <div className="catalog-data-error" role="alert">{productsError}</div>}
           <div className="products-grid">
             {visibleProducts.map((product) => (
               <article className="catalog-product" key={product.id}>

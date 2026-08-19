@@ -1,0 +1,28 @@
+databases:
+  - name: sirena-esentis-db
+    plan: free
+    databaseName: sirena_esentis
+    user: sirena_esentis
+
+services:
+  - type: web
+    name: sirena-esentis-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Sirena.Api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sirena-esentis-db
+          property: connectionString
+      - key: ALLOWED_ORIGINS
+        value: https://sirena-esentis.faustinodelacruz820.workers.dev
+      - key: CATALOG_SYNC_ENABLED
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false

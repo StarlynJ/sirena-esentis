@@ -1,11 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { products, type Product } from "./data";
+import { loadCatalogProducts } from "./catalog-api";
+import type { Product } from "./data";
 
 type CartLine = { product: Product; quantity: number };
 type CartContextValue = {
   items: CartLine[];
+  products: Product[];
+  productsLoading: boolean;
+  productsError: string | null;
   totalCount: number;
   subtotal: number;
   addProduct: (productId: number, quantity?: number) => void;
@@ -17,7 +21,10 @@ type CartContextValue = {
 const STORAGE_KEY = "sirena-esentis-demo-cart";
 const CartContext = createContext<CartContextValue | null>(null);
 
-export function StoreProvider({ children }: { children: React.ReactNode }) {
+export function StoreProvider({ children, initialProducts = [] }: { children: React.ReactNode; initialProducts?: Product[] }) {
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [productsLoading, setProductsLoading] = useState(initialProducts.length === 0);
+  const [productsError, setProductsError] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -37,6 +44,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    void loadCatalogProducts(controller.signal)
+      .then((rows) => {
+        if (!controller.signal.aborted) setProducts(rows);
+        setProductsError(null);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setProductsError("No pudimos cargar el catálogo desde Sirena en este momento.");
+      })
+      .finally(() => setProductsLoading(false));
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     if (!isHydrated) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(quantities));
   }, [isHydrated, quantities]);
@@ -50,6 +72,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     return {
       items,
+      products,
+      productsLoading,
+      productsError,
       totalCount,
       subtotal,
       addProduct(productId, quantity = 1) {
@@ -75,7 +100,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       },
       clearCart() { setQuantities({}); },
     };
-  }, [quantities]);
+  }, [products, productsError, productsLoading, quantities]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

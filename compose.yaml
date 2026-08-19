@@ -30,6 +30,7 @@ services:
       DATABASE_URL: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Maximum Pool Size=20;Minimum Pool Size=2;Connection Idle Lifetime=300"
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      CATALOG_SYNC_ENABLED: ${CATALOG_SYNC_ENABLED:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
     depends_on:
       postgres:

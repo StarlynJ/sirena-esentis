@@ -10,6 +10,7 @@ public sealed class Product
     [MaxLength(240)] public required string ImagePath { get; set; }
     [MaxLength(60)] public required string Role { get; set; }
     [MaxLength(24)] public required string Collection { get; set; }
+    public bool IsActive { get; set; } = true;
     [MaxLength(500)] public string? SourceUrl { get; set; }
     public required string Description { get; set; }
     public required string Usage { get; set; }

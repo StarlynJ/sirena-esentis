@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Montserrat, Poppins } from "next/font/google";
 import "./globals.css";
+import { loadCatalogProducts } from "./catalog-api";
 import { ChatAssistant } from "./chat-assistant";
 import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
@@ -35,11 +36,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const initialProducts = await loadCatalogProducts().catch(() => []);
   return (
     <html lang="es-DO">
       <body className={`${poppins.variable} ${montserrat.variable}`}>
-        <StoreProvider>
+        <StoreProvider initialProducts={initialProducts}>
           <SiteHeader />
           {children}
           <SiteFooter />

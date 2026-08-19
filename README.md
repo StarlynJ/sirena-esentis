@@ -66,6 +66,8 @@ npm run dev
 - `POST /api/orders`: valida productos y recalcula totales en el servidor.
 - `GET /api/maps/autocomplete`: proxy protegido para Places API.
 
+Al iniciar, la API sincroniza desde las fichas públicas oficiales de Sirena.do exactamente 25 productos Esentis y las cinco referencias de maquillaje usadas en colorimetría. Los datos normalizados se guardan en PostgreSQL; el frontend y el motor de recomendaciones no contienen un catálogo alterno ni productos mock.
+
 ## Verificación
 
 ```bash
@@ -90,3 +92,5 @@ npm run deploy
 La rama de producción del repositorio es `prod`. Cloudflare Workers Builds debe observar esa rama y ejecutar `npm run deploy`; `main` y `dev` conservan el mismo monorepo como ramas de integración y desarrollo.
 
 Cloudflare Workers Free puede alojar la web, pero no ejecuta el contenedor ASP.NET. Cloudflare Containers requiere Workers Paid; por eso la API .NET y PostgreSQL deben desplegarse en un proveedor de contenedores/PostgreSQL o cambiar explícitamente la arquitectura de producción.
+
+`render.yaml` describe la API ASP.NET y PostgreSQL para un Blueprint de Render. Después de crear el servicio, configura `NEXT_PUBLIC_API_URL` en Cloudflare con la URL pública de la API y mantén `prod` como rama de despliegue.

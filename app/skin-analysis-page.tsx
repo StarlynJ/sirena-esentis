@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { formatPrice, products } from "./data";
+import { formatPrice, type Product } from "./data";
 import { useCart } from "./store-provider";
 
 type Stage = "intro" | "capture" | "analyzing" | "report";
@@ -41,14 +41,6 @@ type SkinReport = {
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
-
-const skinProductIds: Record<SkinType, number[]> = {
-  seca: [1, 6, 7],
-  grasa: [1, 2, 8],
-  mixta: [1, 2, 7],
-  sensible: [1, 7, 6],
-  normal: [1, 6, 5],
-};
 
 const metricOrder: MetricKey[] = ["uniformity", "texture", "shine", "redness", "blemishes", "pores", "underEyes", "hydration"];
 const clamp = (value: number, min = 38, max = 98) => Math.round(Math.min(max, Math.max(min, value)));
@@ -177,8 +169,16 @@ function FaceGuide() {
   return <div className="face-guide" aria-hidden="true"><i className="guide-face" /><i className="guide-eye left" /><i className="guide-eye right" /><i className="guide-nose" /><i className="guide-mouth" /></div>;
 }
 
+function recommendationsFor(products: Product[], skinType: SkinType) {
+  const esentis = products
+    .filter((product) => product.collection === "esentis" && product.suitableFor.includes(skinType))
+    .sort((first, second) => Number(/facial|sérum|contorno|solar|brillo/i.test(second.role)) - Number(/facial|sérum|contorno|solar|brillo/i.test(first.role)))
+    .slice(0, 4);
+  return [...esentis, ...products.filter((product) => product.collection === "makeup")];
+}
+
 export function SkinAnalysisPage() {
-  const { addProduct } = useCart();
+  const { addProduct, products } = useCart();
   const [stage, setStage] = useState<Stage>("intro");
   const [tab, setTab] = useState<ReportTab>(() => typeof window !== "undefined" && window.location.hash === "#colorimetria" ? "color" : "skin");
   const [consent, setConsent] = useState(false);
@@ -195,11 +195,7 @@ export function SkinAnalysisPage() {
     return () => streamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
 
-  const recommendations = useMemo(() => {
-    if (!report) return [];
-    const ids = [...skinProductIds[report.skinType], 9, 10, 11, 12, 13];
-    return ids.map((id) => products.find((product) => product.id === id)).filter(Boolean);
-  }, [report]);
+  const recommendations = useMemo(() => report ? recommendationsFor(products, report.skinType) : [], [products, report]);
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -252,7 +248,7 @@ export function SkinAnalysisPage() {
       if (!detection.faceLandmarks.length) throw new Error("No detectamos un rostro completo. Mira de frente, retira obstáculos y prueba otra vez.");
       const nextReport = analyzePixels(canvas, detection.faceLandmarks[0], photo);
       setReport(nextReport);
-      setSelected([...skinProductIds[nextReport.skinType], 9, 10, 11]);
+      setSelected(recommendationsFor(products, nextReport.skinType).slice(0, 7).map((product) => product.id));
       setAdded(false);
       setTab(window.location.hash === "#colorimetria" ? "color" : "skin");
       setStage("report");

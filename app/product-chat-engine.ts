@@ -1,5 +1,4 @@
-import { formatPrice } from "./data";
-import { buildKnowledgeContext, knowledgeEntries } from "./product-knowledge";
+import { formatPrice, type Product } from "./data";
 import type { SkinProfileKey } from "./skin-description-ai";
 
 type LanguageSession = { prompt: (input: string) => Promise<string>; destroy?: () => void };
@@ -24,29 +23,29 @@ function normalize(value: string) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function relatedEntries(question: string, profile: SkinProfileKey) {
+function relatedEntries(question: string, profile: SkinProfileKey, products: Product[]) {
   const normalized = normalize(question);
-  return knowledgeEntries
-    .map((entry) => {
-      const productText = normalize(`${entry.product.name} ${entry.product.role} ${entry.description} ${entry.concerns.join(" ")}`);
+  return products
+    .map((product) => {
+      const productText = normalize(`${product.name} ${product.role} ${product.description} ${product.concerns.join(" ")}`);
       const tokens = normalized.split(/\W+/).filter((token) => token.length > 3);
       let relevance = tokens.filter((token) => productText.includes(token)).length * 3;
-      if (entry.suitableFor.includes(profile)) relevance += 1;
-      if (normalized.includes("barato") || normalized.includes("economico")) relevance += Math.max(0, 700 - entry.product.price) / 700;
-      return { entry, relevance };
+      if (product.suitableFor.includes(profile)) relevance += 1;
+      if (normalized.includes("barato") || normalized.includes("economico")) relevance += Math.max(0, 700 - product.price) / 700;
+      return { product, relevance };
     })
     .sort((a, b) => b.relevance - a.relevance);
 }
 
-function fallbackAnswer(question: string, profile: SkinProfileKey) {
+function fallbackAnswer(question: string, profile: SkinProfileKey, products: Product[]) {
   if (!domainTerms.test(question)) {
     return "Puedo ayudarte únicamente con productos, maquillaje y rutinas disponibles en este catálogo de Sirena. ¿Sobre cuál producto tienes dudas?";
   }
 
   const normalized = normalize(question);
-  const ranked = relatedEntries(question, profile);
-  const best = ranked[0]?.entry;
-  const matched = ranked.filter((item) => item.relevance >= 3).slice(0, 3).map((item) => item.entry);
+  const ranked = relatedEntries(question, profile, products);
+  const best = ranked[0]?.product;
+  const matched = ranked.filter((item) => item.relevance >= 3).slice(0, 3).map((item) => item.product);
 
   if (/ingrediente|composicion|contiene/.test(normalized)) {
     return "La ficha cargada no detalla la lista completa de ingredientes. Para no inventarte información, te recomiendo revisar la etiqueta del producto o abrir su ficha vigente en Sirena.do. Si me dices cuál producto es, sí puedo explicarte su función y uso disponible.";
@@ -55,25 +54,25 @@ function fallbackAnswer(question: string, profile: SkinProfileKey) {
     return "No puedo confirmar inventario por tienda en tiempo real. Puedes abrir la ficha de Sirena.do o verificar tu dirección para consultar disponibilidad. Sí puedo ayudarte a comparar el producto o incorporarlo a tu rutina.";
   }
   if (/precio|cuesta|valor/.test(normalized)) {
-    const targets = matched.length ? matched : ranked.slice(0, 3).map((item) => item.entry);
-    return targets.map(({ product }) => `${product.name}: ${formatPrice(product.price)}.`).join(" ") + " Los precios corresponden a la información cargada y pueden cambiar en Sirena.do.";
+    const targets = matched.length ? matched : ranked.slice(0, 3).map((item) => item.product);
+    return targets.map((product) => `${product.name}: ${formatPrice(product.price)}.`).join(" ") + " Los precios corresponden a la información cargada y pueden cambiar en Sirena.do.";
   }
   if (/orden|rutina|primero|despues|combinar/.test(normalized)) {
     return "Orden orientativo: 1) Gel Facial Esentis, 2) sérum según tu objetivo, 3) contorno de ojos, 4) crema y 5) protector solar durante el día. Introduce un producto nuevo a la vez y haz prueba de parche.";
   }
   if (/como|usar|aplica/.test(normalized) && best) {
-    return `${best.product.name}: ${best.usage} Su función principal es ${best.description.charAt(0).toLowerCase()}${best.description.slice(1)}`;
+    return `${best.name}: ${best.usage} Su función principal es ${best.description.charAt(0).toLowerCase()}${best.description.slice(1)}`;
   }
   if (/diferencia|compar/.test(normalized) && matched.length >= 2) {
     const [first, second] = matched;
-    return `${first.product.name} se orienta a ${first.concerns.slice(0, 2).join(" y ")}; ${second.product.name} se orienta a ${second.concerns.slice(0, 2).join(" y ")}. Para piel ${profile}, elegiría según el objetivo que quieras priorizar.`;
+    return `${first.name} se orienta a ${first.concerns.slice(0, 2).join(" y ")}; ${second.name} se orienta a ${second.concerns.slice(0, 2).join(" y ")}. Para piel ${profile}, elegiría según el objetivo que quieras priorizar.`;
   }
   if (matched.length) {
     const selected = matched[0];
-    return `${selected.product.name} podría encajar porque ${selected.description.charAt(0).toLowerCase()}${selected.description.slice(1)} Para un perfil ${profile}: ${selected.usage} Haz prueba de parche antes de incorporarlo.`;
+    return `${selected.name} podría encajar porque ${selected.description.charAt(0).toLowerCase()}${selected.description.slice(1)} Para un perfil ${profile}: ${selected.usage} Haz prueba de parche antes de incorporarlo.`;
   }
 
-  const suitable = ranked.filter(({ entry }) => entry.suitableFor.includes(profile)).slice(0, 3).map(({ entry }) => entry.product.name);
+  const suitable = ranked.filter(({ product }) => product.suitableFor.includes(profile)).slice(0, 3).map(({ product }) => product.name);
   return `Para piel ${profile}, puedo orientarte sobre ${suitable.join(", ")}. Pregúntame por precio, función, orden de uso o diferencias entre productos.`;
 }
 
@@ -105,8 +104,8 @@ export async function createProductChatSession(name: string, age: number) {
   return localSessionSlug();
 }
 
-export async function answerProductQuestion(question: string, profile: SkinProfileKey, recentMessages: string[], context: BackendContext): Promise<ProductChatAnswer> {
-  if (!domainTerms.test(question)) return { answer: fallbackAnswer(question, profile), sessionSlug: context.sessionSlug };
+export async function answerProductQuestion(question: string, profile: SkinProfileKey, recentMessages: string[], context: BackendContext, products: Product[]): Promise<ProductChatAnswer> {
+  if (!domainTerms.test(question)) return { answer: fallbackAnswer(question, profile, products), sessionSlug: context.sessionSlug };
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
   try {
@@ -130,7 +129,7 @@ export async function answerProductQuestion(question: string, profile: SkinProfi
       const availability = await languageModel.availability(options);
       if (availability !== "unavailable") {
         const session = await languageModel.create(options);
-        const response = await session.prompt(`${systemPrompt}\n\nPERFIL PROBABLE: ${profile}\nCONVERSACIÓN RECIENTE: ${recentMessages.slice(-4).join(" | ")}\nPREGUNTA: ${question}\nBASE_DE_CONOCIMIENTO: ${JSON.stringify(buildKnowledgeContext())}`);
+        const response = await session.prompt(`${systemPrompt}\n\nPERFIL PROBABLE: ${profile}\nCONVERSACIÓN RECIENTE: ${recentMessages.slice(-4).join(" | ")}\nPREGUNTA: ${question}\nBASE_DE_CONOCIMIENTO: ${JSON.stringify(products.map(({ id, name, role, price, description, usage, suitableFor, concerns, sourceUrl }) => ({ id, name, role, price, description, usage, suitableFor, concerns, sourceUrl })))}`);
         session.destroy?.();
         return { answer: response.trim().slice(0, 900), sessionSlug: context.sessionSlug };
       }
@@ -138,5 +137,5 @@ export async function answerProductQuestion(question: string, profile: SkinProfi
       // Continue with the deterministic knowledge-base responder.
     }
   }
-  return { answer: fallbackAnswer(question, profile), sessionSlug: context.sessionSlug };
+  return { answer: fallbackAnswer(question, profile, products), sessionSlug: context.sessionSlug };
 }

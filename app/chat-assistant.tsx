@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Check, CircleAlert, LoaderCircle, Send, ShieldCh
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { OPEN_ASSISTANT_EVENT } from "./assistant-trigger-link";
-import { formatPrice, products } from "./data";
+import { formatPrice } from "./data";
 import { answerProductQuestion, createProductChatSession } from "./product-chat-engine";
 import { analyzeDescriptionWithBrowserAI } from "./skin-description-ai";
 import { useCart } from "./store-provider";
@@ -15,12 +15,12 @@ type ChatMessage = { role: "assistant" | "user"; text: string };
 type StoredChatSession = { name: string; age: string; stage: Stage; profile: ProfileKey | null; messages: ChatMessage[] };
 const SESSION_STORAGE_PREFIX = "sirena-esentis-session:";
 
-const mockProfiles: Record<ProfileKey, { label: string; response: string; ids: number[] }> = {
-  seca: { label: "Piel seca", response: "Tu descripción sugiere una piel que necesita limpieza suave y apoyo de hidratación.", ids: [1, 6, 7] },
-  grasa: { label: "Piel grasa", response: "Tu descripción sugiere mayor producción de sebo y brillo frecuente.", ids: [1, 2, 8] },
-  mixta: { label: "Piel mixta", response: "Tu descripción sugiere brillo en la zona T y zonas más secas o equilibradas.", ids: [1, 2, 7] },
-  sensible: { label: "Piel sensible", response: "Tu descripción sugiere sensibilidad o reacción frecuente ante productos.", ids: [1, 7, 6] },
-  normal: { label: "Piel normal", response: "Tu descripción sugiere una piel equilibrada con necesidades de mantenimiento.", ids: [1, 6, 5] },
+const profileGuidance: Record<ProfileKey, { label: string; response: string; priorities: string[] }> = {
+  seca: { label: "Piel seca", response: "Tu descripción sugiere una piel que necesita limpieza suave y apoyo de hidratación.", priorities: ["hidratación", "suavidad", "resequedad"] },
+  grasa: { label: "Piel grasa", response: "Tu descripción sugiere mayor producción de sebo y brillo frecuente.", priorities: ["brillo", "sebo", "limpieza"] },
+  mixta: { label: "Piel mixta", response: "Tu descripción sugiere brillo en la zona T y zonas más secas o equilibradas.", priorities: ["zona t", "brillo", "hidratación"] },
+  sensible: { label: "Piel sensible", response: "Tu descripción sugiere sensibilidad o reacción frecuente ante productos.", priorities: ["limpieza", "hidratación", "suavidad"] },
+  normal: { label: "Piel normal", response: "Tu descripción sugiere una piel equilibrada con necesidades de mantenimiento.", priorities: ["limpieza", "hidratación", "protección solar"] },
 };
 
 const options: { key: ProfileKey; label: string; hint: string }[] = [
@@ -41,7 +41,7 @@ function inferProfile(text: string): ProfileKey {
 }
 
 export function ChatAssistant() {
-  const { addProduct } = useCart();
+  const { addProduct, products } = useCart();
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("intro");
   const [name, setName] = useState("");
@@ -113,10 +113,19 @@ export function ChatAssistant() {
     if (feed) feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
   }, [messages, answering, stage]);
 
-  const recommendation = profile ? mockProfiles[profile] : null;
+  const recommendation = profile ? profileGuidance[profile] : null;
   const recommendedProducts = useMemo(
-    () => recommendation ? recommendation.ids.map((id) => products.find((product) => product.id === id)!).filter(Boolean) : [],
-    [recommendation],
+    () => recommendation ? products
+      .filter((product) => product.collection === "esentis" && product.suitableFor.includes(profile!))
+      .map((product) => ({
+        product,
+        score: product.concerns.filter((concern) => recommendation.priorities.some((priority) => concern.includes(priority) || priority.includes(concern))).length * 4
+          + (/facial|sérum|contorno|solar|brillo/i.test(product.role) ? 2 : 0),
+      }))
+      .sort((first, second) => second.score - first.score || first.product.price - second.product.price)
+      .slice(0, 3)
+      .map(({ product }) => product) : [],
+    [products, profile, recommendation],
   );
 
   function updateSessionUrl(slug: string) {
@@ -140,7 +149,7 @@ export function ChatAssistant() {
   function resolveProfile(key: ProfileKey) {
     setProfile(key);
     setMessages([
-      { role: "assistant", text: `${mockProfiles[key].response} Te dejo una recomendación inicial, pero podemos seguir conversando: pregúntame por precios, diferencias, orden de uso o cualquier producto de este catálogo Sirena.` },
+      { role: "assistant", text: `${profileGuidance[key].response} Te dejo una recomendación inicial basada en el catálogo vigente de nuestra base de datos, pero podemos seguir conversando: pregúntame por precios, diferencias, orden de uso o cualquier producto Sirena.` },
     ]);
     setAddedProducts([]);
     setStage("chat");
@@ -161,7 +170,7 @@ export function ChatAssistant() {
     setMessages((current) => [...current, userMessage]);
     setChatInput("");
     setAnswering(true);
-    const result = await answerProductQuestion(value, profile, messages.map((message) => message.text), { name, age: Number(age), sessionSlug });
+    const result = await answerProductQuestion(value, profile, messages.map((message) => message.text), { name, age: Number(age), sessionSlug }, products);
     if (result.sessionSlug && result.sessionSlug !== sessionSlug) {
       setSessionSlug(result.sessionSlug);
       updateSessionUrl(result.sessionSlug);

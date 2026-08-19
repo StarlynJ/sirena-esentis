@@ -10,9 +10,9 @@ using Sirena.Api.Domain;
 using Sirena.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+var connectionString = NormalizeDatabaseUrl(Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("DATABASE_URL or ConnectionStrings:Default is required.");
+    ?? throw new InvalidOperationException("DATABASE_URL or ConnectionStrings:Default is required."));
 
 builder.Services.AddDbContextPool<AppDbContext>(options => options.UseNpgsql(connectionString, postgres =>
 {
@@ -29,6 +29,13 @@ builder.Services.AddHttpClient("google-maps", client =>
     client.BaseAddress = new Uri("https://places.googleapis.com/");
     client.Timeout = TimeSpan.FromSeconds(8);
 });
+builder.Services.AddHttpClient("sirena-catalog", client =>
+{
+    client.BaseAddress = new Uri("https://www.sirena.do/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Sirena-Esentis-Catalog-Sync/1.0");
+});
+builder.Services.AddScoped<IOfficialCatalogSyncService, OfficialCatalogSyncService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddRateLimiter(options => options.AddFixedWindowLimiter("api", limiter =>
@@ -57,6 +64,17 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
+    if (!string.Equals(Environment.GetEnvironmentVariable("CATALOG_SYNC_ENABLED"), "false", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            await scope.ServiceProvider.GetRequiredService<IOfficialCatalogSyncService>().SyncAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            scope.ServiceProvider.GetRequiredService<ILogger<Program>>().LogError(exception, "Official Sirena catalog sync failed; the last successful database snapshot remains active.");
+        }
+    }
 }
 
 var api = app.MapGroup("/api").RequireRateLimiting("api");
@@ -69,7 +87,7 @@ api.MapGet("/health", async (AppDbContext db, CancellationToken cancellationToke
 
 api.MapGet("/products", async (string? collection, AppDbContext db, CancellationToken cancellationToken) =>
 {
-    var query = db.Products.AsNoTracking();
+    var query = db.Products.AsNoTracking().Where(product => product.IsActive);
     if (!string.IsNullOrWhiteSpace(collection)) query = query.Where(product => product.Collection == collection.ToLower());
     return Results.Ok(await query.OrderBy(product => product.Id).ToListAsync(cancellationToken));
 });
@@ -123,7 +141,7 @@ api.MapPost("/chat/answer", async (ChatAnswerRequest request, AppDbContext db, I
     }
 
     var recent = await db.ChatMessages.AsNoTracking().Where(message => message.ChatSessionId == session.Id).OrderByDescending(message => message.CreatedAt).Take(4).OrderBy(message => message.CreatedAt).Select(message => message.Content).ToListAsync(cancellationToken);
-    var products = await db.Products.AsNoTracking().OrderBy(product => product.Id).ToListAsync(cancellationToken);
+    var products = await db.Products.AsNoTracking().Where(product => product.IsActive).OrderBy(product => product.Id).ToListAsync(cancellationToken);
     var userMessage = new ChatMessage { ChatSessionId = session.Id, Role = "user", Content = request.Question.Trim(), CreatedAt = DateTimeOffset.UtcNow };
     var result = await chat.AnswerAsync(request.Question.Trim(), request.SkinProfile.ToLower(), products, recent, cancellationToken);
     var assistantMessage = new ChatMessage { ChatSessionId = session.Id, Role = "assistant", Content = result.Answer, CreatedAt = DateTimeOffset.UtcNow.AddTicks(1) };
@@ -198,5 +216,21 @@ app.Run();
 static bool ValidProfile(string value) => value.ToLowerInvariant() is "seca" or "grasa" or "mixta" or "sensible" or "normal";
 static string SafeName(string value) => string.IsNullOrWhiteSpace(value) ? "Visitante" : value.Trim()[..Math.Min(value.Trim().Length, 80)];
 static string CreateSessionSlug() => $"sesion-{Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant()}";
+static string NormalizeDatabaseUrl(string value)
+{
+    if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("postgres" or "postgresql")) return value;
+    var credentials = uri.UserInfo.Split(':', 2);
+    return new Npgsql.NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.IsDefaultPort ? 5432 : uri.Port,
+        Database = uri.AbsolutePath.TrimStart('/'),
+        Username = Uri.UnescapeDataString(credentials[0]),
+        Password = credentials.Length > 1 ? Uri.UnescapeDataString(credentials[1]) : "",
+        SslMode = Npgsql.SslMode.Require,
+        MaxPoolSize = 20,
+        MinPoolSize = 0
+    }.ConnectionString;
+}
 
 public partial class Program { }
