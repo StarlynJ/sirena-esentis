@@ -1,0 +1,10 @@
+node_modules
+dist
+.vinext
+.wrangler
+.git
+.env
+.env.*
+backend/**/bin
+backend/**/obj
+npm-debug.log*
