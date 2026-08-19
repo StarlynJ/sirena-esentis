@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Check, CircleAlert, LoaderCircle, Send, ShieldCh
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { OPEN_ASSISTANT_EVENT } from "./assistant-trigger-link";
-import { formatPrice } from "./data";
+import { formatPrice, isFacialCareProduct } from "./data";
 import { answerProductQuestion, createProductChatSession } from "./product-chat-engine";
 import { analyzeDescriptionWithBrowserAI } from "./skin-description-ai";
 import { useCart } from "./store-provider";
@@ -116,7 +116,7 @@ export function ChatAssistant() {
   const recommendation = profile ? profileGuidance[profile] : null;
   const recommendedProducts = useMemo(
     () => recommendation ? products
-      .filter((product) => product.collection === "esentis" && product.suitableFor.includes(profile!))
+      .filter((product) => isFacialCareProduct(product) && product.suitableFor.includes(profile!))
       .map((product) => ({
         product,
         score: product.concerns.filter((concern) => recommendation.priorities.some((priority) => concern.includes(priority) || priority.includes(concern))).length * 4

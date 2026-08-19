@@ -28,3 +28,17 @@ export const categories = [
 export function formatPrice(value: number) {
   return `RD$${value.toFixed(2)}`;
 }
+
+const facialCareRoles = new Set([
+  "Desmaquillante",
+  "Limpieza facial",
+  "Control de brillo",
+  "Contorno de ojos",
+  "Sérum facial",
+  "Crema facial",
+  "Protección solar",
+]);
+
+export function isFacialCareProduct(product: Product) {
+  return product.collection === "esentis" && facialCareRoles.has(product.role);
+}

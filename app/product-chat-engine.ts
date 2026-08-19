@@ -1,5 +1,5 @@
 import { API_URL } from "./api-url";
-import { formatPrice, type Product } from "./data";
+import { formatPrice, isFacialCareProduct, type Product } from "./data";
 import type { SkinProfileKey } from "./skin-description-ai";
 
 type LanguageSession = { prompt: (input: string) => Promise<string>; destroy?: () => void };
@@ -26,7 +26,14 @@ function normalize(value: string) {
 
 function relatedEntries(question: string, profile: SkinProfileKey, products: Product[]) {
   const normalized = normalize(question);
-  return products
+  const asksForHair = /cabello|capilar|shampoo|acondicionador|leave.?in/.test(normalized);
+  const asksForBody = /corporal|cuerpo|bano|manos/.test(normalized);
+  const asksForMakeup = /maquillaje|base|rubor|labial|gloss|corrector|prebase/.test(normalized);
+  const asksForFacialCare = /piel|rostro|facial|rutina|grasa|seca|mixta|sensible|normal|brillo|poro|mancha|ojera/.test(normalized);
+  const candidates = asksForFacialCare && !asksForHair && !asksForBody && !asksForMakeup
+    ? products.filter(isFacialCareProduct)
+    : products;
+  return candidates
     .map((product) => {
       const productText = normalize(`${product.name} ${product.role} ${product.description} ${product.concerns.join(" ")}`);
       const tokens = normalized.split(/\W+/).filter((token) => token.length > 3);
@@ -73,7 +80,7 @@ function fallbackAnswer(question: string, profile: SkinProfileKey, products: Pro
     return `${selected.name} podría encajar porque ${selected.description.charAt(0).toLowerCase()}${selected.description.slice(1)} Para un perfil ${profile}: ${selected.usage} Haz prueba de parche antes de incorporarlo.`;
   }
 
-  const suitable = ranked.filter(({ product }) => product.suitableFor.includes(profile)).slice(0, 3).map(({ product }) => product.name);
+  const suitable = ranked.filter(({ product }) => isFacialCareProduct(product) && product.suitableFor.includes(profile)).slice(0, 3).map(({ product }) => product.name);
   return `Para piel ${profile}, puedo orientarte sobre ${suitable.join(", ")}. Pregúntame por precio, función, orden de uso o diferencias entre productos.`;
 }
 

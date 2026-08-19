@@ -89,12 +89,21 @@ public sealed partial class ProductChatService(HttpClient httpClient, IConfigura
     private static string Fallback(string question, string profile, IReadOnlyList<Product> products)
     {
         var normalized = question.ToLowerInvariant();
-        var matched = products
+        var asksForHair = Regex.IsMatch(normalized, "cabello|capilar|shampoo|acondicionador|leave.?in");
+        var asksForBody = Regex.IsMatch(normalized, "corporal|cuerpo|baño|bano|manos");
+        var asksForMakeup = Regex.IsMatch(normalized, "maquillaje|base|rubor|labial|gloss|corrector|prebase");
+        var asksForFacialCare = Regex.IsMatch(normalized, "piel|rostro|facial|rutina|grasa|seca|mixta|sensible|normal|brillo|poro|mancha|ojera");
+        var candidates = asksForFacialCare && !asksForHair && !asksForBody && !asksForMakeup
+            ? products.Where(IsFacialCareProduct)
+            : products;
+        var tokens = Regex.Split(normalized, "[^a-záéíóúüñ0-9]+", RegexOptions.IgnoreCase).Where(token => token.Length > 3).ToArray();
+        var matched = candidates
             .Select(product => new
             {
                 Product = product,
                 Score = product.Concerns.Count(concern => normalized.Contains(concern, StringComparison.OrdinalIgnoreCase))
                     + (normalized.Contains(product.Role, StringComparison.OrdinalIgnoreCase) ? 2 : 0)
+                    + tokens.Count(token => product.Name.Contains(token, StringComparison.OrdinalIgnoreCase)) * 3
                     + (product.SuitableFor.Contains(profile) ? 1 : 0)
             })
             .OrderByDescending(item => item.Score)
@@ -117,6 +126,9 @@ public sealed partial class ProductChatService(HttpClient httpClient, IConfigura
             ? $"Puedo orientarte sobre los productos disponibles para piel {profile}. Pregúntame por precio, función, uso o diferencias."
             : $"{best.Name} podría encajar porque {char.ToLowerInvariant(best.Description[0])}{best.Description[1..]} {best.Usage} Haz prueba de parche antes de incorporarlo.";
     }
+
+    private static bool IsFacialCareProduct(Product product) => product.Collection == "esentis" && product.Role is
+        "Desmaquillante" or "Limpieza facial" or "Control de brillo" or "Contorno de ojos" or "Sérum facial" or "Crema facial" or "Protección solar";
 
     [GeneratedRegex("producto|sirena|esentis|piel|rutina|limpi|serum|sérum|crema|contorno|sebo|brillo|grasa|seca|mixta|sensible|normal|mancha|tono|ojera|poro|base|rubor|labial|gloss|corrector|prebase|maquillaje|cabello|leave|precio|cuesta|usar|aplicar|orden|combinar|recomienda|conviene|diferencia|ingrediente|disponib|comprar|carrito|protector|hidrata", RegexOptions.IgnoreCase)]
     private static partial Regex DomainTerms();
