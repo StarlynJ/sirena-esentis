@@ -19,7 +19,10 @@ const montserrat = Montserrat({
   weight: ["600", "700"],
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://sirena-esentis.faustinodelacruz820.workers.dev";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Sirena — Esentis",
   description: "Prototipo del asesor de belleza Esentis integrado a Sirena.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
