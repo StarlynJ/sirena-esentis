@@ -55,6 +55,7 @@ export function ChatAssistant() {
   const [answering, setAnswering] = useState(false);
   const [sessionSlug, setSessionSlug] = useState<string | null>(null);
   const conversationFeedRef = useRef<HTMLDivElement>(null);
+  const latestAssistantMessageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -107,7 +108,18 @@ export function ChatAssistant() {
   useEffect(() => {
     if (stage !== "chat") return;
     const feed = conversationFeedRef.current;
-    if (feed) feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
+    if (!feed) return;
+    const frame = window.requestAnimationFrame(() => {
+      const latestMessage = latestAssistantMessageRef.current;
+      if (!answering && messages.at(-1)?.role === "assistant" && latestMessage) {
+        const feedTop = feed.getBoundingClientRect().top;
+        const messageTop = latestMessage.getBoundingClientRect().top;
+        feed.scrollTo({ top: Math.max(0, feed.scrollTop + messageTop - feedTop - 8), behavior: "smooth" });
+        return;
+      }
+      feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [messages, answering, stage]);
 
   const recommendation = profile ? profileGuidance[profile] : null;
@@ -258,7 +270,7 @@ export function ChatAssistant() {
 
                 <div className="conversation-feed" aria-live="polite" ref={conversationFeedRef}>
                   {messages.map((message, index) => (
-                    <div className={`conversation-message ${message.role}${message.provisional ? " provisional" : ""}`} key={`${message.role}-${index}`}>
+                    <div ref={message.role === "assistant" && index === messages.length - 1 ? latestAssistantMessageRef : undefined} className={`conversation-message ${message.role}${message.provisional ? " provisional" : ""}`} key={`${message.role}-${index}`}>
                       {message.role === "assistant" && <span>E</span>}
                       <p>{message.provisional && <small>Respuesta de respaldo</small>}{message.text}</p>
                     </div>
