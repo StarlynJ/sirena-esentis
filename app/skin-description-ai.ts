@@ -27,7 +27,7 @@ export async function analyzeDescriptionWithBrowserAI(description: string): Prom
     const session = await languageModel.create(options);
     const response = await Promise.race([
       session.prompt(`${TEXT_SKIN_SYSTEM_PROMPT}\n\nDESCRIPCIÓN DE LA PERSONA:\n${description}`),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("El análisis local tardó demasiado.")), 6000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("El análisis local tardó demasiado.")), 4000)),
     ]);
     session.destroy?.();
     const jsonText = response.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();

@@ -28,6 +28,7 @@ type MetricKey = "uniformity" | "texture" | "shine" | "redness" | "blemishes" | 
 
 type SkinMetric = { label: string; score: number; observation: string; tip: string };
 type SkinReport = {
+  source: "ai" | "fallback";
   overall: number;
   skinType: SkinType;
   confidence: number;
@@ -64,7 +65,7 @@ function statusFor(score: number) {
 
 async function analyzePhotoWithAI(photo: string): Promise<SkinReport> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 50000);
+  const timeout = window.setTimeout(() => controller.abort(), 4000);
   try {
     const response = await fetch(`${API_URL}/api/skin-analysis/vision`, {
       method: "POST",
@@ -81,6 +82,7 @@ async function analyzePhotoWithAI(photo: string): Promise<SkinReport> {
     const metric = (source: AiVisionMetric, label: string): SkinMetric => ({ label, score: source.score, observation: source.cannotAssess ? "Esta zona no pudo evaluarse con suficiente confianza." : source.observation, tip: source.tip });
     const undertone = ai.colorimetry.undertone === "cálido" || ai.colorimetry.undertone === "frío" ? ai.colorimetry.undertone : "neutro";
     return {
+      source: "ai",
       overall: ai.overallScore,
       skinType: ai.skinProfile.probableType,
       confidence: Math.round(ai.skinProfile.confidence * 100),
@@ -102,11 +104,37 @@ async function analyzePhotoWithAI(photo: string): Promise<SkinReport> {
       },
     };
   } catch (cause) {
-    if (cause instanceof DOMException && cause.name === "AbortError") throw new Error("El análisis con IA tardó demasiado. Intenta nuevamente.");
+    if (cause instanceof DOMException && cause.name === "AbortError") throw new Error("El análisis con IA superó los 4 segundos.");
     throw cause;
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+function createFallbackSkinReport(photo: string): SkinReport {
+  const metric = (label: string, score: number, observation: string, tip: string): SkinMetric => ({ label, score, observation, tip });
+  return {
+    source: "fallback",
+    overall: 76,
+    skinType: "mixta",
+    confidence: 0,
+    undertone: "neutro",
+    season: "Paleta neutra provisional",
+    palette: ["#C98F78", "#E7B5A5", "#A45D6F", "#C78691", "#8A5A67"],
+    photo,
+    rationale: "Este perfil es un ejemplo de respaldo y no fue calculado a partir de la imagen.",
+    lightingNote: "La IA no respondió dentro de 4 segundos. Mostramos datos de demostración para que puedas probar el flujo completo.",
+    metrics: {
+      uniformity: metric("Uniformidad", 78, "Dato de demostración: apariencia generalmente uniforme.", "Mantén una rutina sencilla y protección solar diaria."),
+      texture: metric("Textura", 74, "Dato de demostración: textura visible moderada.", "Evita incorporar varios activos nuevos al mismo tiempo."),
+      shine: metric("Control de brillo", 68, "Dato de demostración: posible brillo en zona T.", "Usa limpieza suave y evita resecar en exceso."),
+      redness: metric("Rojeces visibles", 82, "Dato de demostración: pocas rojeces visibles.", "Haz prueba de parche con cada producto nuevo."),
+      blemishes: metric("Imperfecciones", 72, "Dato de demostración: algunas imperfecciones cosméticas.", "No manipules lesiones y consulta dermatología si persisten."),
+      pores: metric("Apariencia de poros", 70, "Dato de demostración: poros de apariencia moderada.", "La limpieza suave y la hidratación ayudan a mantener el equilibrio."),
+      underEyes: metric("Ojeras visibles", 75, "Dato de demostración: tono ligeramente desigual bajo los ojos.", "Descansa y aplica productos del contorno sin frotar."),
+      hydration: metric("Apariencia de hidratación", 73, "Dato de demostración: hidratación cosmética media.", "Aplica hidratante sobre la piel ligeramente húmeda."),
+    },
+  };
 }
 
 function FaceGuide() {
@@ -190,14 +218,19 @@ export function SkinAnalysisPage() {
       const detection = detector.detect(canvas);
       detector.close();
       if (!detection.faceLandmarks.length) throw new Error("No detectamos un rostro completo. Mira de frente, retira obstáculos y prueba otra vez.");
-      const nextReport = await analyzePhotoWithAI(photo);
+      let nextReport: SkinReport;
+      try {
+        nextReport = await analyzePhotoWithAI(photo);
+      } catch {
+        nextReport = createFallbackSkinReport(photo);
+      }
       setReport(nextReport);
       setSelected(recommendationsFor(products, nextReport.skinType).slice(0, 7).map((product) => product.id));
       setAdded(false);
       setTab(window.location.hash === "#colorimetria" ? "color" : "skin");
       setStage("report");
       const sessionSlug = new URLSearchParams(window.location.search).get("sesion");
-      void fetch(`${API_URL}/api/skin-analyses`, {
+      if (nextReport.source === "ai") void fetch(`${API_URL}/api/skin-analyses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -341,6 +374,7 @@ export function SkinAnalysisPage() {
           <LoaderCircle className="analysis-loader" size={30} />
           <h1>Analizando señales visuales</h1>
           <p>La IA está revisando calidad, zonas del rostro, apariencia de textura y tono…</p>
+          <small>Si tarda más de 4 segundos, continuaremos con un informe de demostración claramente identificado.</small>
           <small>No cerramos conclusiones médicas ni identificamos a la persona.</small>
         </section>
       )}
@@ -358,6 +392,8 @@ export function SkinAnalysisPage() {
             <button className={tab === "products" ? "active" : ""} onClick={() => setTab("products")}>Recomendación</button>
           </nav>
 
+          {report.source === "fallback" && <div className="analysis-fallback-banner" role="status"><CircleAlert size={19} /><div><strong>Resultado provisional de demostración</strong><span>La IA falló o superó los 4 segundos. Estos valores son datos de respaldo, no fueron calculados desde tu rostro y no constituyen un diagnóstico.</span></div></div>}
+
           {tab === "skin" && (
             <div className="skin-report-content">
               <div className="report-top-card">
@@ -367,7 +403,7 @@ export function SkinAnalysisPage() {
                     <span>Tu informe visual</span>
                     <h1>Puntuación de la piel <strong>{report.overall}</strong><small>/100</small></h1>
                     <div className="overall-bar"><i style={{ width: `${report.overall}%` }} /></div>
-                    <p>Tu piel se percibe <b>{report.skinType}</b> en esta foto. Confianza estimada por IA: {report.confidence}%.</p>
+                    <p>{report.source === "ai" ? <>Tu piel se percibe <b>{report.skinType}</b> en esta foto. Confianza estimada por IA: {report.confidence}%.</> : <>Perfil de demostración: <b>{report.skinType}</b>. No se calculó confianza sobre la fotografía.</>}</p>
                     <p className="ai-rationale">{report.rationale}</p>
                     <small>{report.lightingNote}</small>
                   </div>

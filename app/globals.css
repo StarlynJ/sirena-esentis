@@ -607,6 +607,10 @@ img { display: block; max-width: 100%; }
 .chat-product-list article > button { width: 30px; height: 30px; padding: 0; border: 1px solid #a74777; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #a74777; }
 .chat-product-list article > button:disabled { border-color: #6aa983; background: #eaf8f0; color: #33805a; }
 .recommendation-waiting, .recommendation-empty { min-height: 70px; padding: 13px; border: 1px dashed #e1c6d2; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff8fb; color: #80586b; text-align: center; }
+.recommendation-fallback { margin-bottom: 9px; padding: 8px 10px; border-radius: 9px; display: flex; align-items: flex-start; gap: 7px; background: #fff3f7; color: #8b4f6b; font-size: 8px; line-height: 1.45; }
+.recommendation-fallback svg { flex: 0 0 auto; margin-top: 1px; }
+.conversation-message.provisional p { border: 1px dashed #dda8bf; background: #fff6f9; }
+.conversation-message.provisional p > small { margin-bottom: 4px; display: block; color: #a74777; font-size: 7px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .recommendation-waiting > div { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
 .recommendation-waiting strong { font-size: 10px; }
 .recommendation-waiting span, .recommendation-empty { font-size: 8px; line-height: 1.4; }
@@ -795,6 +799,11 @@ img { display: block; max-width: 100%; }
 .report-tabs button::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 4px; border-radius: 4px 4px 0 0; background: transparent; }
 .report-tabs button.active { color: #178eae; font-weight: 700; }
 .report-tabs button.active::after { background: #1da6c7; }
+.analysis-fallback-banner { max-width: 930px; margin: 20px auto 0; padding: 13px 16px; border: 1px solid #efc7d8; border-radius: 12px; display: grid; grid-template-columns: 21px 1fr; gap: 9px; background: #fff4f8; color: #98506f; }
+.analysis-fallback-banner svg { margin-top: 1px; }
+.analysis-fallback-banner div { display: flex; flex-direction: column; }
+.analysis-fallback-banner strong { font-size: 11px; }
+.analysis-fallback-banner span { margin-top: 2px; color: #765c68; font-size: 9px; line-height: 1.5; }
 .skin-report-content, .color-report-content, .recommendation-content { padding: 34px 0 20px; animation: report-section-in .3s ease both; }
 @keyframes report-section-in { from { opacity: 0; transform: translateY(10px); } }
 .report-top-card { padding: 20px 20px 24px; border: 1px solid #e2ebee; border-radius: 24px; overflow: hidden; background: #fff; box-shadow: 0 20px 48px rgba(53,70,83,.1); }

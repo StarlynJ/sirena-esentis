@@ -10,7 +10,7 @@ import { useCart } from "./store-provider";
 
 type Stage = "intro" | "skin" | "chat";
 type ProfileKey = "seca" | "grasa" | "mixta" | "sensible" | "normal";
-type ChatMessage = { role: "assistant" | "user"; text: string };
+type ChatMessage = { role: "assistant" | "user"; text: string; provisional?: boolean };
 type StoredChatSession = { name: string; age: string; stage: Stage; profile: ProfileKey | null; messages: ChatMessage[] };
 const SESSION_STORAGE_PREFIX = "sirena-esentis-session:";
 
@@ -40,7 +40,7 @@ function inferProfile(text: string): ProfileKey {
 }
 
 export function ChatAssistant() {
-  const { addProduct, products, productsError, productsLoading } = useCart();
+  const { addProduct, products, productsError, productsFallback, productsLoading } = useCart();
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("intro");
   const [name, setName] = useState("");
@@ -179,7 +179,7 @@ export function ChatAssistant() {
         setSessionSlug(result.sessionSlug);
         updateSessionUrl(result.sessionSlug);
       }
-      setMessages((current) => [...current, { role: "assistant", text: result.answer }]);
+      setMessages((current) => [...current, { role: "assistant", text: result.answer, provisional: result.usedFallback }]);
     } catch {
       setMessages((current) => [...current, { role: "assistant", text: "No pude completar la consulta en este momento. Intenta nuevamente; tu conversación sigue abierta." }]);
     } finally {
@@ -258,17 +258,17 @@ export function ChatAssistant() {
 
                 <div className="conversation-feed" aria-live="polite" ref={conversationFeedRef}>
                   {messages.map((message, index) => (
-                    <div className={`conversation-message ${message.role}`} key={`${message.role}-${index}`}>
+                    <div className={`conversation-message ${message.role}${message.provisional ? " provisional" : ""}`} key={`${message.role}-${index}`}>
                       {message.role === "assistant" && <span>E</span>}
-                      <p>{message.text}</p>
+                      <p>{message.provisional && <small>Respuesta de respaldo</small>}{message.text}</p>
                     </div>
                   ))}
 
                   <div className="conversation-recommendation">
                     <header><div><span>Recomendación inicial</span><strong>Rutina para {name}</strong></div><small>Sin compromiso de compra</small></header>
                     {productsLoading && <div className="recommendation-waiting" role="status"><LoaderCircle className="spin" size={20} /><div><strong>Preparando tu selección</strong><span>Consultando productos Esentis disponibles…</span></div></div>}
-                    {!productsLoading && productsError && <div className="recommendation-empty" role="alert">No pudimos cargar los productos. Reintentaremos cuando vuelvas a abrir la asesora.</div>}
-                    {!productsLoading && !productsError && recommendedProducts.length === 0 && <div className="recommendation-empty">No encontramos una combinación para este perfil en el catálogo vigente.</div>}
+                    {!productsLoading && productsFallback && <div className="recommendation-fallback" role="status"><CircleAlert size={15} /> Selección temporal: la base de datos tardó más de 4 segundos. Puedes continuar y volveremos a consultar el catálogo al recargar.</div>}
+                    {!productsLoading && recommendedProducts.length === 0 && <div className="recommendation-empty" role={productsError ? "alert" : undefined}>{productsError ?? "No encontramos una combinación para este perfil en el catálogo vigente."}</div>}
                     {!productsLoading && recommendedProducts.length > 0 && <div className="chat-product-list">
                       {recommendedProducts.map((product) => (
                         <article key={product.id}>

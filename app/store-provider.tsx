@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { loadCatalogProducts } from "./catalog-api";
-import type { Product } from "./data";
+import { fallbackCatalogProducts, type Product } from "./data";
 
 type CartLine = { product: Product; quantity: number };
 type CartContextValue = {
@@ -10,6 +10,7 @@ type CartContextValue = {
   products: Product[];
   productsLoading: boolean;
   productsError: string | null;
+  productsFallback: boolean;
   totalCount: number;
   subtotal: number;
   addProduct: (productId: number, quantity?: number) => void;
@@ -25,6 +26,7 @@ export function StoreProvider({ children, initialProducts = [] }: { children: Re
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [productsLoading, setProductsLoading] = useState(initialProducts.length === 0);
   const [productsError, setProductsError] = useState<string | null>(null);
+  const [productsFallback, setProductsFallback] = useState(false);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -49,10 +51,13 @@ export function StoreProvider({ children, initialProducts = [] }: { children: Re
       .then((rows) => {
         if (!controller.signal.aborted) setProducts(rows);
         setProductsError(null);
+        setProductsFallback(false);
       })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setProductsError("No pudimos cargar el catálogo desde Sirena en este momento.");
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setProducts((current) => current.length > 0 ? current : fallbackCatalogProducts);
+        setProductsFallback(true);
+        setProductsError("El catálogo tardó más de 4 segundos. Mostramos una selección temporal mientras se recupera la conexión.");
       })
       .finally(() => setProductsLoading(false));
     return () => controller.abort();
@@ -75,6 +80,7 @@ export function StoreProvider({ children, initialProducts = [] }: { children: Re
       products,
       productsLoading,
       productsError,
+      productsFallback,
       totalCount,
       subtotal,
       addProduct(productId, quantity = 1) {
@@ -100,7 +106,7 @@ export function StoreProvider({ children, initialProducts = [] }: { children: Re
       },
       clearCart() { setQuantities({}); },
     };
-  }, [products, productsError, productsLoading, quantities]);
+  }, [products, productsError, productsFallback, productsLoading, quantities]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

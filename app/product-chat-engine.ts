@@ -2,23 +2,7 @@ import { API_URL } from "./api-url";
 import { formatPrice, isFacialCareProduct, type Product } from "./data";
 import type { SkinProfileKey } from "./skin-description-ai";
 
-type LanguageSession = { prompt: (input: string) => Promise<string>; destroy?: () => void };
-type LanguageModelApi = { availability: (options?: object) => Promise<string>; create: (options?: object) => Promise<LanguageSession> };
-
 const domainTerms = /producto|sirena|esentis|piel|rutina|limpi|serum|sérum|crema|contorno|sebo|brillo|grasa|seca|mixta|sensible|normal|mancha|tono|ojera|poros|base|rubor|labial|gloss|corrector|prebase|maquillaje|cabello|leave.?in|precio|cuesta|usar|aplicar|orden|combinar|recomienda|conviene|diferencia|ingrediente|disponib|comprar|carrito|protector|hidrat/i;
-
-const systemPrompt = `
-Eres la asesora virtual de productos de Sirena. Responde en español dominicano, de forma amable, concreta y conversacional.
-
-ALCANCE ESTRICTO:
-- Responde SOLO preguntas sobre los productos incluidos en BASE_DE_CONOCIMIENTO, su precio mostrado, categoría, descripción, uso cosmético orientativo, orden de rutina, comparación y compatibilidad general con el perfil indicado.
-- Si preguntan sobre cualquier otro tema, responde exactamente con una redirección breve: "Puedo ayudarte únicamente con productos, maquillaje y rutinas disponibles en este catálogo de Sirena. ¿Sobre cuál producto tienes dudas?"
-- No inventes ingredientes, concentraciones, certificaciones, disponibilidad, promociones, resultados clínicos ni propiedades que no estén en la base.
-- Si preguntan por ingredientes o inventario y no aparecen verificados, dilo con claridad y recomienda revisar la etiqueta o la ficha vigente en Sirena.do.
-- No diagnostiques afecciones ni sustituyas dermatología. Si mencionan dolor, inflamación, lesión, sangrado o una reacción persistente, recomienda suspender el producto y consultar a un profesional.
-- Recomendar no significa presionar la compra. Primero explica por qué podría encajar, cómo usarlo y una precaución relevante.
-- Usa máximo 90 palabras. No uses Markdown complejo ni listes más de 3 productos.
-`.trim();
 
 function normalize(value: string) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -85,7 +69,7 @@ function fallbackAnswer(question: string, profile: SkinProfileKey, products: Pro
 }
 
 type BackendContext = { name: string; age: number; sessionSlug: string | null };
-export type ProductChatAnswer = { answer: string; sessionSlug: string | null };
+export type ProductChatAnswer = { answer: string; sessionSlug: string | null; usedFallback: boolean };
 
 function localSessionSlug() {
   const token = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -111,7 +95,7 @@ export async function createProductChatSession(name: string, age: number) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, age }),
-    }, 12000);
+    }, 4000);
     if (response.ok) {
       const result = await response.json() as { slug: string };
       if (/^sesion-[a-z0-9-]{8,32}$/.test(result.slug)) return result.slug;
@@ -123,7 +107,8 @@ export async function createProductChatSession(name: string, age: number) {
 }
 
 export async function answerProductQuestion(question: string, profile: SkinProfileKey, recentMessages: string[], context: BackendContext, products: Product[]): Promise<ProductChatAnswer> {
-  if (!domainTerms.test(question)) return { answer: fallbackAnswer(question, profile, products), sessionSlug: context.sessionSlug };
+  void recentMessages;
+  if (!domainTerms.test(question)) return { answer: fallbackAnswer(question, profile, products), sessionSlug: context.sessionSlug, usedFallback: false };
 
   const apiUrl = API_URL;
   try {
@@ -131,29 +116,14 @@ export async function answerProductQuestion(question: string, profile: SkinProfi
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionSlug: context.sessionSlug, name: context.name, age: context.age, skinProfile: profile, question }),
-    }, 15000);
+    }, 4000);
     if (response.ok) {
       const result = await response.json() as { answer: string; sessionSlug: string };
-      return { answer: result.answer, sessionSlug: result.sessionSlug };
+      return { answer: result.answer, sessionSlug: result.sessionSlug, usedFallback: false };
     }
   } catch {
     // The local responder keeps the prototype usable when the API is offline.
   }
 
-  const languageModel = (globalThis as unknown as { LanguageModel?: LanguageModelApi }).LanguageModel;
-  if (languageModel) {
-    const options = { expectedInputs: [{ type: "text", languages: ["es"] }], expectedOutputs: [{ type: "text", languages: ["es"] }] };
-    try {
-      const availability = await languageModel.availability(options);
-      if (availability !== "unavailable") {
-        const session = await languageModel.create(options);
-        const response = await session.prompt(`${systemPrompt}\n\nPERFIL PROBABLE: ${profile}\nCONVERSACIÓN RECIENTE: ${recentMessages.slice(-4).join(" | ")}\nPREGUNTA: ${question}\nBASE_DE_CONOCIMIENTO: ${JSON.stringify(products.map(({ id, name, role, price, description, usage, suitableFor, concerns, sourceUrl }) => ({ id, name, role, price, description, usage, suitableFor, concerns, sourceUrl })))}`);
-        session.destroy?.();
-        return { answer: response.trim().slice(0, 900), sessionSlug: context.sessionSlug };
-      }
-    } catch {
-      // Continue with the deterministic knowledge-base responder.
-    }
-  }
-  return { answer: fallbackAnswer(question, profile, products), sessionSlug: context.sessionSlug };
+  return { answer: fallbackAnswer(question, profile, products), sessionSlug: context.sessionSlug, usedFallback: true };
 }
