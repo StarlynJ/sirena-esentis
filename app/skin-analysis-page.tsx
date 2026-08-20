@@ -37,13 +37,23 @@ type SkinReport = {
   palette: string[];
   photo: string;
   lightingNote: string;
+  rationale: string;
+};
+
+type AiVisionMetric = { score: number; cannotAssess: boolean; observation: string; tip: string };
+type AiVisionResponse = {
+  quality: { usable: boolean; confidence: number; issues: string[] };
+  skinProfile: { probableType: SkinType; confidence: number; rationale: string };
+  overallScore: number;
+  metrics: Record<"uniformity" | "texture" | "shine" | "visibleRedness" | "visibleBlemishes" | "poreAppearance" | "underEyeDarkness" | "hydrationAppearance", AiVisionMetric>;
+  colorimetry: { undertone: string; season: string; confidence: number; cannotAssess: boolean; paletteHex: string[] };
+  safetyNote: string;
 };
 
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
 const metricOrder: MetricKey[] = ["uniformity", "texture", "shine", "redness", "blemishes", "pores", "underEyes", "hydration"];
-const clamp = (value: number, min = 38, max = 98) => Math.round(Math.min(max, Math.max(min, value)));
 
 function statusFor(score: number) {
   if (score >= 85) return "Muy bien";
@@ -52,117 +62,51 @@ function statusFor(score: number) {
   return "Atención cosmética";
 }
 
-function paletteFor(undertone: SkinReport["undertone"], light: boolean) {
-  if (undertone === "cálido") return light
-    ? ["#F2B59A", "#EF8C74", "#D97762", "#F0C46B", "#9F6A40"]
-    : ["#C66B50", "#A84A3D", "#C98A45", "#75512F", "#8B3F35"];
-  if (undertone === "frío") return light
-    ? ["#E2A7B7", "#C97B9B", "#AA6E9B", "#7487B6", "#934F71"]
-    : ["#9D3F63", "#733252", "#61558D", "#2F607D", "#B05578"];
-  return ["#D9A18D", "#BD7E75", "#A87E69", "#8C6B73", "#D7B17A"];
-}
-
-function analyzePixels(canvas: HTMLCanvasElement, landmarks: Array<{ x: number; y: number }>, photo: string): SkinReport {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("No se pudo leer la imagen.");
-
-  const xs = landmarks.map((point) => point.x * canvas.width);
-  const ys = landmarks.map((point) => point.y * canvas.height);
-  const minX = Math.max(0, Math.floor(Math.min(...xs)));
-  const maxX = Math.min(canvas.width, Math.ceil(Math.max(...xs)));
-  const minY = Math.max(0, Math.floor(Math.min(...ys)));
-  const maxY = Math.min(canvas.height, Math.ceil(Math.max(...ys)));
-  const width = Math.max(1, maxX - minX);
-  const height = Math.max(1, maxY - minY);
-  const pixels = ctx.getImageData(minX, minY, width, height).data;
-
-  let count = 0;
-  let red = 0;
-  let green = 0;
-  let blue = 0;
-  let luma = 0;
-  let lumaSquared = 0;
-  let redDominance = 0;
-  let highlights = 0;
-  let chromaSpread = 0;
-
-  for (let y = 0; y < height; y += 3) {
-    for (let x = 0; x < width; x += 3) {
-      const nx = (x - width / 2) / (width / 2);
-      const ny = (y - height * .49) / (height * .49);
-      if (nx * nx + ny * ny > 0.82) continue;
-      if (ny < -.6 || (Math.abs(nx) < .18 && ny > -.15 && ny < .55)) continue;
-      const index = (y * width + x) * 4;
-      const r = pixels[index];
-      const g = pixels[index + 1];
-      const b = pixels[index + 2];
-      const lum = r * .299 + g * .587 + b * .114;
-      if (lum < 35 || lum > 248) continue;
-      count += 1;
-      red += r;
-      green += g;
-      blue += b;
-      luma += lum;
-      lumaSquared += lum * lum;
-      redDominance += Math.max(0, r - (g + b) / 2);
-      chromaSpread += Math.max(r, g, b) - Math.min(r, g, b);
-      if (lum > 214 && Math.max(r, g, b) - Math.min(r, g, b) < 30) highlights += 1;
+async function analyzePhotoWithAI(photo: string): Promise<SkinReport> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 50000);
+  try {
+    const response = await fetch(`${API_URL}/api/skin-analysis/vision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageDataUrl: photo }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const problem = await response.json().catch(() => null) as { detail?: string } | null;
+      throw new Error(problem?.detail || "No pudimos completar el análisis visual con IA.");
     }
+    const ai = await response.json() as AiVisionResponse;
+    if (!ai.quality.usable) throw new Error(ai.quality.issues[0] || "La foto no permite una evaluación confiable. Intenta con el rostro frontal y mejor iluminación.");
+    const metric = (source: AiVisionMetric, label: string): SkinMetric => ({ label, score: source.score, observation: source.cannotAssess ? "Esta zona no pudo evaluarse con suficiente confianza." : source.observation, tip: source.tip });
+    const undertone = ai.colorimetry.undertone === "cálido" || ai.colorimetry.undertone === "frío" ? ai.colorimetry.undertone : "neutro";
+    return {
+      overall: ai.overallScore,
+      skinType: ai.skinProfile.probableType,
+      confidence: Math.round(ai.skinProfile.confidence * 100),
+      undertone,
+      season: ai.colorimetry.cannotAssess ? "Colorimetría por confirmar" : ai.colorimetry.season,
+      palette: ai.colorimetry.paletteHex,
+      photo,
+      rationale: ai.skinProfile.rationale,
+      lightingNote: ai.quality.issues.length ? ai.quality.issues.join(" ") : "Informe generado por IA multimodal a partir de esta fotografía.",
+      metrics: {
+        uniformity: metric(ai.metrics.uniformity, "Uniformidad"),
+        texture: metric(ai.metrics.texture, "Textura"),
+        shine: metric(ai.metrics.shine, "Control de brillo"),
+        redness: metric(ai.metrics.visibleRedness, "Rojeces visibles"),
+        blemishes: metric(ai.metrics.visibleBlemishes, "Imperfecciones"),
+        pores: metric(ai.metrics.poreAppearance, "Apariencia de poros"),
+        underEyes: metric(ai.metrics.underEyeDarkness, "Ojeras visibles"),
+        hydration: metric(ai.metrics.hydrationAppearance, "Apariencia de hidratación"),
+      },
+    };
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "AbortError") throw new Error("El análisis con IA tardó demasiado. Intenta nuevamente.");
+    throw cause;
+  } finally {
+    window.clearTimeout(timeout);
   }
-
-  if (count < 80) throw new Error("La iluminación no permite analizar el rostro. Intenta nuevamente de frente a una ventana.");
-  const avgR = red / count;
-  const avgG = green / count;
-  const avgB = blue / count;
-  const avgLuma = luma / count;
-  const lumaDeviation = Math.sqrt(Math.max(0, lumaSquared / count - avgLuma * avgLuma));
-  const rednessSignal = redDominance / count;
-  const highlightRatio = highlights / count;
-  const avgChroma = chromaSpread / count;
-
-  const texture = clamp(98 - lumaDeviation * .72);
-  const shine = clamp(96 - highlightRatio * 260);
-  const redness = clamp(97 - Math.max(0, rednessSignal - 7) * 2.35);
-  const uniformity = clamp(97 - lumaDeviation * .58 - avgChroma * .07);
-  const pores = clamp(texture * .68 + uniformity * .32 - 2);
-  const hydration = clamp(texture * .48 + shine * .32 + uniformity * .2);
-  const blemishes = clamp(redness * .45 + uniformity * .55);
-  const underEyes = clamp(uniformity - Math.max(0, 145 - avgLuma) * .08 + 3);
-
-  let skinType: SkinType = "normal";
-  if (redness < 62) skinType = "sensible";
-  else if (shine < 65 && hydration >= 66) skinType = "grasa";
-  else if (shine < 74 && hydration < 72) skinType = "mixta";
-  else if (hydration < 64) skinType = "seca";
-
-  const warmSignal = avgR - avgB;
-  const undertone: SkinReport["undertone"] = warmSignal > 42 && avgG > avgB + 8 ? "cálido" : warmSignal < 27 ? "frío" : "neutro";
-  const light = avgLuma >= 145;
-  const season = undertone === "cálido" ? (light ? "Primavera cálida" : "Otoño cálido") : undertone === "frío" ? (light ? "Verano frío" : "Invierno frío") : "Neutra versátil";
-  const values = [uniformity, texture, shine, redness, blemishes, pores, underEyes, hydration];
-  const overall = clamp(values.reduce((sum, value) => sum + value, 0) / values.length);
-  const lightingNote = avgLuma < 85 ? "La foto está algo oscura; la colorimetría tiene menor certeza." : avgLuma > 220 ? "La foto tiene mucha luz; la colorimetría tiene menor certeza." : "La iluminación es suficiente para una estimación cosmética.";
-
-  return {
-    overall,
-    skinType,
-    confidence: clamp(91 - Math.abs(148 - avgLuma) * .18, 54, 92),
-    undertone,
-    season,
-    palette: paletteFor(undertone, light),
-    photo,
-    lightingNote,
-    metrics: {
-      uniformity: { label: "Uniformidad", score: uniformity, observation: "Distribución visual del tono en las zonas visibles.", tip: "Usa protector solar diariamente y evita exfoliar en exceso." },
-      texture: { label: "Textura", score: texture, observation: "Variación superficial visible con esta luz.", tip: "Una limpieza suave y humectación constante ayudan a mantener la barrera." },
-      shine: { label: "Control de brillo", score: shine, observation: "Reflejos visibles en la superficie de la piel.", tip: "Prefiere capas ligeras y productos no comedogénicos si el brillo te incomoda." },
-      redness: { label: "Rojeces visibles", score: redness, observation: "Contraste rojizo visible; no identifica una causa médica.", tip: "Introduce productos nuevos de uno en uno y realiza una prueba de parche." },
-      blemishes: { label: "Imperfecciones", score: blemishes, observation: "Variaciones visibles de color y textura.", tip: "No manipules las zonas y mantén una rutina simple y constante." },
-      pores: { label: "Apariencia de poros", score: pores, observation: "Estimación óptica; la cámara no mide el tamaño real del poro.", tip: "Limpia suavemente y evita productos abrasivos." },
-      underEyes: { label: "Ojeras visibles", score: underEyes, observation: "Contraste visual bajo los ojos con la iluminación actual.", tip: "Descanso, hidratación y un corrector de subtono adecuado pueden mejorar su apariencia." },
-      hydration: { label: "Apariencia de hidratación", score: hydration, observation: "Estimación basada en textura y reflejo superficial.", tip: "Aplica hidratante sobre la piel ligeramente húmeda y sella con protector solar." },
-    },
-  };
 }
 
 function FaceGuide() {
@@ -246,7 +190,7 @@ export function SkinAnalysisPage() {
       const detection = detector.detect(canvas);
       detector.close();
       if (!detection.faceLandmarks.length) throw new Error("No detectamos un rostro completo. Mira de frente, retira obstáculos y prueba otra vez.");
-      const nextReport = analyzePixels(canvas, detection.faceLandmarks[0], photo);
+      const nextReport = await analyzePhotoWithAI(photo);
       setReport(nextReport);
       setSelected(recommendationsFor(products, nextReport.skinType).slice(0, 7).map((product) => product.id));
       setAdded(false);
@@ -344,12 +288,12 @@ export function SkinAnalysisPage() {
             <p>Una experiencia visual inspirada en las estaciones de belleza Sirena para orientarte sobre textura, brillo, poros, rojeces visibles, ojeras y colorimetría.</p>
             <div className="analysis-benefits">
               <div><Camera /><strong>Cámara o foto</strong><span>Elige cómo quieres analizarte.</span></div>
-              <div><ShieldCheck /><strong>Procesamiento local</strong><span>Tu foto no se guarda ni se envía.</span></div>
+              <div><ShieldCheck /><strong>Procesamiento protegido</strong><span>La foto se envía temporalmente a la IA y no se guarda en nuestra base.</span></div>
               <div><ShoppingBag /><strong>Rutina sugerida</strong><span>Selecciona productos y agrégalos al carrito.</span></div>
             </div>
             <label className="analysis-consent">
               <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-              <span><strong>Acepto el análisis cosmético de esta foto.</strong> Entiendo que es una estimación orientativa, no identifica quién soy y no sustituye dermatología.</span>
+              <span><strong>Acepto el análisis cosmético con IA de esta foto.</strong> Entiendo que se procesa temporalmente, no se usa para identificarme y no sustituye dermatología.</span>
             </label>
             <button className="analysis-primary" type="button" disabled={!consent} onClick={() => setStage("capture")}>Comenzar análisis <ChevronRight size={19} /></button>
             <small>Recomendado para mayores de 13 años con autorización de su tutor cuando corresponda.</small>
@@ -385,7 +329,7 @@ export function SkinAnalysisPage() {
                 <label><Upload size={18} /> Subir una foto<input type="file" accept="image/*" capture="user" onChange={uploadPhoto} /></label>
               </div>
               {error && <p className="analysis-error" role="alert"><CircleAlert size={17} /> {error}</p>}
-              <p className="privacy-note"><ShieldCheck size={17} /> La imagen se procesa en este dispositivo y se descarta al salir o reiniciar.</p>
+              <p className="privacy-note"><ShieldCheck size={17} /> La imagen se envía cifrada al proveedor de IA para este análisis y no se almacena en nuestra base de datos.</p>
             </aside>
           </div>
         </section>
@@ -396,7 +340,7 @@ export function SkinAnalysisPage() {
           <div className="analysis-scan-visual"><ImagePlus size={60} /><FaceGuide /><i /></div>
           <LoaderCircle className="analysis-loader" size={30} />
           <h1>Analizando señales visuales</h1>
-          <p>Revisando calidad, zonas del rostro, apariencia de textura y tono…</p>
+          <p>La IA está revisando calidad, zonas del rostro, apariencia de textura y tono…</p>
           <small>No cerramos conclusiones médicas ni identificamos a la persona.</small>
         </section>
       )}
@@ -406,7 +350,7 @@ export function SkinAnalysisPage() {
           <header className="report-header">
             <button type="button" onClick={restart}><ArrowLeft size={18} /> Nuevo análisis</button>
             <img src="/brand/sirena-logo.webp" alt="Sirena" />
-            <span>Beauty Scan <small>Prototipo</small></span>
+            <span>Beauty Scan <small>IA multimodal</small></span>
           </header>
           <nav className="report-tabs" aria-label="Secciones del resultado">
             <button className={tab === "skin" ? "active" : ""} onClick={() => setTab("skin")}>Informe de piel</button>
@@ -423,7 +367,8 @@ export function SkinAnalysisPage() {
                     <span>Tu informe visual</span>
                     <h1>Puntuación de la piel <strong>{report.overall}</strong><small>/100</small></h1>
                     <div className="overall-bar"><i style={{ width: `${report.overall}%` }} /></div>
-                    <p>Tu piel se percibe <b>{report.skinType}</b> en esta foto. Confianza estimada: {report.confidence}%.</p>
+                    <p>Tu piel se percibe <b>{report.skinType}</b> en esta foto. Confianza estimada por IA: {report.confidence}%.</p>
+                    <p className="ai-rationale">{report.rationale}</p>
                     <small>{report.lightingNote}</small>
                   </div>
                 </div>

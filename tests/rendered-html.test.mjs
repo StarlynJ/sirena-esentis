@@ -57,6 +57,7 @@ test("renders the dedicated catalog, analysis, and cart routes", async () => {
   assert.match(catalogHtml, /Gel Facial Esentis Limpiador 200 Ml/i);
   assert.match(analysisHtml, /Análisis de piel y colorimetría/i);
   assert.match(analysisHtml, /Conoce la apariencia de tu piel en minutos/i);
+  assert.match(analysisHtml, /Procesamiento protegido/i);
   assert.match(cartHtml, /Mi carrito/i);
   assert.match(cartHtml, /Tu carrito está vacío/i);
 });

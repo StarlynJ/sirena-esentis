@@ -25,16 +25,14 @@ public sealed partial class ProductChatService(HttpClient httpClient, IConfigura
         {
             try
             {
-                var model = configuration["Gemini:Model"] ?? "gemini-3.6-flash";
+                var model = configuration["Gemini:ChatModel"] ?? "gemini-3.5-flash-lite";
                 var prompt = BuildPrompt(question, skinProfile, products, recentMessages);
-                using var request = new HttpRequestMessage(HttpMethod.Post, "v1beta/interactions");
-                request.Headers.Add("x-goog-api-key", apiKey);
-                request.Headers.Add("x-goog-api-client", "sirena-esentis-prototype/1.0");
-                request.Content = JsonContent.Create(new { model, input = prompt, store = false });
-                using var response = await httpClient.SendAsync(request, cancellationToken);
-                response.EnsureSuccessStatusCode();
-                using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
-                var answer = ReadInteractionText(json.RootElement);
+                var payload = new
+                {
+                    contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } },
+                    generationConfig = new { maxOutputTokens = 1200, responseMimeType = "text/plain", thinkingConfig = new { thinkingLevel = "minimal" } }
+                };
+                var answer = await GenerateAnswerAsync(model, apiKey, payload, cancellationToken);
                 if (!string.IsNullOrWhiteSpace(answer)) return new(answer[..Math.Min(answer.Length, 900)], true);
             }
             catch (Exception exception) when (exception is HttpRequestException or JsonException or KeyNotFoundException)
@@ -50,18 +48,38 @@ public sealed partial class ProductChatService(HttpClient httpClient, IConfigura
         return new(Fallback(question, skinProfile, products), false);
     }
 
-    private static string? ReadInteractionText(JsonElement root)
+    private async Task<string?> GenerateAnswerAsync(string model, string apiKey, object payload, CancellationToken cancellationToken)
     {
-        if (!root.TryGetProperty("steps", out var steps)) return null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"v1beta/models/{Uri.EscapeDataString(model)}:generateContent");
+            request.Headers.Add("x-goog-api-key", apiKey);
+            request.Headers.Add("x-goog-api-client", "sirena-esentis-prototype/1.0");
+            request.Content = JsonContent.Create(payload);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode && attempt == 0 && (int)response.StatusCode is 429 or >= 500)
+            {
+                await Task.Delay(700, cancellationToken);
+                continue;
+            }
+            response.EnsureSuccessStatusCode();
+            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+            return ReadGeneratedText(json.RootElement);
+        }
+        return null;
+    }
 
-        return steps.EnumerateArray()
-            .Where(step => step.TryGetProperty("type", out var type) && type.GetString() == "model_output")
-            .Where(step => step.TryGetProperty("content", out _))
-            .SelectMany(step => step.GetProperty("content").EnumerateArray())
-            .Where(content => content.TryGetProperty("type", out var type) && type.GetString() == "text")
-            .Select(content => content.TryGetProperty("text", out var text) ? text.GetString() : null)
-            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text))
-            ?.Trim();
+    private static string? ReadGeneratedText(JsonElement root)
+    {
+        if (!root.TryGetProperty("candidates", out var candidates)) return null;
+        var texts = candidates.EnumerateArray()
+            .Where(candidate => candidate.TryGetProperty("content", out _))
+            .SelectMany(candidate => candidate.GetProperty("content").GetProperty("parts").EnumerateArray())
+            .Where(part => !part.TryGetProperty("thought", out var thought) || !thought.GetBoolean())
+            .Select(part => part.TryGetProperty("text", out var text) ? text.GetString() : null)
+            .Where(text => !string.IsNullOrWhiteSpace(text));
+        var answer = string.Concat(texts).Trim();
+        return string.IsNullOrWhiteSpace(answer) ? null : answer;
     }
 
     private static string BuildPrompt(string question, string profile, IReadOnlyList<Product> products, IReadOnlyList<string> recentMessages)
@@ -73,6 +91,7 @@ public sealed partial class ProductChatService(HttpClient httpClient, IConfigura
         });
         return $$"""
         Eres la asesora virtual de productos de Sirena. Responde en español dominicano, con máximo 90 palabras.
+        Devuelve texto plano, sin Markdown, asteriscos, encabezados ni tablas.
         Responde SOLO sobre los productos de BASE_DE_CONOCIMIENTO: precio mostrado, descripción, uso cosmético orientativo, rutina, comparación y compatibilidad general.
         Si el tema está fuera del catálogo responde exactamente: "{{OutOfScope}}"
         No inventes ingredientes, concentraciones, inventario, promociones, resultados clínicos ni propiedades. Si el dato no está disponible, dilo.

@@ -24,6 +24,11 @@ builder.Services.AddHttpClient<IProductChatService, ProductChatService>(client =
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
     client.Timeout = TimeSpan.FromSeconds(25);
 });
+builder.Services.AddHttpClient<ISkinVisionService, GeminiSkinVisionService>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 builder.Services.AddHttpClient("google-maps", client =>
 {
     client.BaseAddress = new Uri("https://places.googleapis.com/");
@@ -162,6 +167,35 @@ api.MapPost("/skin-analyses", async (SaveSkinAnalysisRequest request, AppDbConte
     db.SkinAnalyses.Add(analysis);
     await db.SaveChangesAsync(cancellationToken);
     return Results.Created($"/api/skin-analyses/{analysis.Id}", new { analysis.Id });
+});
+
+api.MapPost("/skin-analysis/vision", async (AnalyzeSkinPhotoRequest request, ISkinVisionService vision, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.ImageDataUrl) || request.ImageDataUrl.Length > 8_000_000)
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["image"] = ["Envía una imagen JPEG, PNG o WebP de hasta 6 MB."] });
+    var match = System.Text.RegularExpressions.Regex.Match(request.ImageDataUrl, "^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    if (!match.Success)
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["image"] = ["El formato de la imagen no es válido."] });
+    try
+    {
+        var imageBytes = Convert.FromBase64String(match.Groups[2].Value);
+        if (imageBytes.Length is < 5_000 or > 6_000_000)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["image"] = ["La imagen debe pesar entre 5 KB y 6 MB."] });
+        var result = await vision.AnalyzeAsync(Convert.ToBase64String(imageBytes), match.Groups[1].Value.ToLowerInvariant(), cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (FormatException)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]> { ["image"] = ["La imagen codificada no es válida."] });
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Problem(exception.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+    {
+        return Results.Problem("No pudimos completar el análisis visual con IA. Intenta nuevamente con buena iluminación.", statusCode: StatusCodes.Status502BadGateway);
+    }
 });
 
 api.MapPost("/orders", async (CreateOrderRequest request, AppDbContext db, CancellationToken cancellationToken) =>

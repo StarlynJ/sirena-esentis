@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, CircleAlert, LoaderCircle, Send, ShieldCheck, ShoppingBag, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, Check, CircleAlert, LoaderCircle, Send, ShieldCheck, ShoppingBag, Sparkles, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { formatPrice, isFacialCareProduct } from "./data";
 import { HardLink } from "./hard-link";
@@ -59,7 +59,8 @@ export function ChatAssistant() {
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const slug = query.get("sesion");
-    const restoreTimer = slug ? window.setTimeout(() => {
+    const shouldRestoreAssistant = Boolean(slug && window.location.pathname === "/esentis");
+    const restoreTimer = shouldRestoreAssistant ? window.setTimeout(() => {
       setSessionSlug(slug);
       setOpen(true);
       try {
@@ -206,7 +207,7 @@ export function ChatAssistant() {
           <button className="assistant-dismiss-layer" type="button" aria-label="Cerrar asistente" onClick={() => setOpen(false)} />
           <section className="assistant-modal" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
             <header className="assistant-header">
-              <div className="assistant-brand"><span><Sparkles size={18} /></span><div><strong id="assistant-title">Asesora Esentis</strong><small>IA local con base de conocimiento Sirena</small></div></div>
+              <div className="assistant-brand"><span><Sparkles size={18} /></span><div><strong id="assistant-title">Asesora Esentis</strong><small>IA con base de conocimiento Sirena</small></div></div>
               <button type="button" aria-label="Cerrar asistente" onClick={() => setOpen(false)}><X size={21} /></button>
             </header>
 
@@ -242,7 +243,6 @@ export function ChatAssistant() {
                   <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Cuéntame cómo se siente tu piel..." />
                   <button type="button" onClick={() => void analyzeDescription()} disabled={!description.trim() || analyzingText}>{analyzingText ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />} {analyzingText ? "Analizando…" : "Analizar descripción"}</button>
                   {analyzingText && <div className="description-analysis-waiting" role="status">Buscando señales como brillo, tirantez, rojeces y zona T…</div>}
-                  <HardLink className="face-analysis-link" href={sessionSlug ? `/analisis-piel?sesion=${encodeURIComponent(sessionSlug)}` : "/analisis-piel"}><span>¿Prefieres que la cámara te oriente?</span><strong>Analizar mi rostro <ArrowRight size={16} /></strong></HardLink>
                 </div>
                 <div className="assistant-disclaimer"><CircleAlert size={18} /><span>La clasificación es una posibilidad orientativa, no un diagnóstico. Si presentas molestias persistentes, consulta a dermatología.</span></div>
               </div>
@@ -289,14 +289,15 @@ export function ChatAssistant() {
                 <div className="suggested-questions" aria-label="Preguntas sugeridas">
                   {["¿En qué orden los uso?", "¿Cuál ayuda con el brillo?", "¿Qué diferencia hay entre los contornos?"].map((question) => <button type="button" key={question} disabled={answering} onClick={() => void sendQuestion(question)}>{question}</button>)}
                 </div>
+                {addedProducts.length > 0 && <HardLink className="chat-cart-cta" href="/carrito"><span><ShoppingBag size={18} /><strong>{addedProducts.length} {addedProducts.length === 1 ? "producto agregado" : "productos agregados"}</strong></span><b>Ir al carrito <ArrowRight size={17} /></b></HardLink>}
                 <form className="conversation-composer" onSubmit={(event) => { event.preventDefault(); void sendQuestion(); }}>
                   <label><span className="sr-only">Pregunta sobre productos Sirena</span><textarea value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Pregunta sobre un producto, precio, uso o rutina…" onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendQuestion(); } }} /></label>
                   <button type="submit" disabled={!chatInput.trim() || answering} aria-label="Enviar pregunta"><Send size={18} /></button>
                 </form>
                 <div className="conversation-scope"><ShieldCheck size={15} /> Solo responde sobre los productos cargados del catálogo Sirena. No inventa ingredientes ni disponibilidad.</div>
-                <div className="conversation-footer-links"><HardLink href="/esentis">Ver catálogo</HardLink><HardLink href="/carrito">Ir al carrito</HardLink></div>
               </div>
             )}
+            <HardLink className="assistant-face-persistent" href={sessionSlug ? `/analisis-piel?sesion=${encodeURIComponent(sessionSlug)}` : "/analisis-piel"}><Camera size={18} /><span><strong>¿No conoces tu tipo de piel?</strong> Analiza tu rostro con IA</span><ArrowRight size={17} /></HardLink>
           </section>
         </div>
       )}
